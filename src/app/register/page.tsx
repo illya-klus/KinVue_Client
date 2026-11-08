@@ -42,7 +42,14 @@ export default function RegisterPage() {
       router.push("/login");
     } catch (err) {
       if (err instanceof GatewayError && err.status === 409) {
-        setError("Email or username is already taken.");
+        const code = err.body?.code?.toUpperCase() ?? "";
+        if (code.includes("USERNAME")) {
+          setError("That username is already taken.");
+        } else if (code.includes("EMAIL")) {
+          setError("That email is already registered.");
+        } else {
+          setError("Email or username is already taken.");
+        }
       } else {
         setError(err instanceof Error ? err.message : "Registration failed");
       }

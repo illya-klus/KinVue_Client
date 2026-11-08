@@ -1,57 +1,51 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
-import { gatewayFetch } from "@/lib/gateway/client";
+import { useEffect, useState } from "react";
+import { searchMovies } from "@/lib/api/movies";
+import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { StatusMessage } from "@/components/ui/status-message";
-
-type SearchHit = {
-  id?: string;
-  title?: string;
-  description?: string;
-};
-
-type SearchResponse = {
-  hits: SearchHit[];
-  estimatedTotalHits?: number;
-};
+import type { MovieSummary } from "@/lib/types/domain";
 
 export default function MovieSearchPage() {
   const [q, setQ] = useState("");
   const [genre, setGenre] = useState("");
-  const [hits, setHits] = useState<SearchHit[]>([]);
+  const debouncedQ = useDebouncedValue(q, 300);
+  const [hits, setHits] = useState<MovieSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function onSearch(event: FormEvent) {
-    event.preventDefault();
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (q.trim()) params.set("q", q.trim());
-      if (genre.trim()) params.set("genre", genre.trim());
-      const data = await gatewayFetch<SearchResponse>(
-        `/api/movies/search?${params.toString()}`,
-        {},
-        { auth: false },
-      );
-      setHits(data.hits ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Search failed");
+  useEffect(() => {
+    const query = debouncedQ.trim();
+    if (query.length > 0 && query.length < 2) {
       setHits([]);
-    } finally {
-      setLoading(false);
+      setError(null);
+      return;
     }
-  }
+    void (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await searchMovies(query, genre.trim() || undefined);
+        setHits(data.hits ?? []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Search failed");
+        setHits([]);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [debouncedQ, genre]);
+
+  const queryTooShort = q.trim().length === 1;
 
   return (
     <section className="space-y-6">
       <h1 className="text-2xl font-semibold">Movie search</h1>
-      <form onSubmit={onSearch} className="flex flex-wrap gap-3 rounded-xl border bg-white p-4">
+      <div className="flex flex-wrap gap-3 rounded-xl border bg-white p-4">
         <input
           className="min-w-[12rem] flex-1 rounded-lg border px-3 py-2 text-sm"
-          placeholder="Search…"
+          placeholder="Search (min 2 chars)…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
@@ -61,32 +55,32 @@ export default function MovieSearchPage() {
           value={genre}
           onChange={(e) => setGenre(e.target.value)}
         />
-        <button
-          type="submit"
-          className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white"
-          disabled={loading}
-        >
-          {loading ? "Searching…" : "Search"}
-        </button>
-      </form>
+      </div>
+      {queryTooShort ? (
+        <StatusMessage title="Keep typing" detail="Search needs at least 2 characters." />
+      ) : null}
       {error ? <StatusMessage tone="error" title="Search error" detail={error} /> : null}
-      {!error && !loading && hits.length === 0 ? (
-        <StatusMessage tone="empty" title="No results yet" detail="Try another query." />
+      {loading ? <p className="text-sm text-zinc-600">Searching…</p> : null}
+      {!loading && !error && hits.length === 0 && debouncedQ.trim().length >= 2 ? (
+        <StatusMessage tone="empty" title="No results" />
       ) : null}
       <ul className="space-y-3">
-        {hits.map((hit) => (
-          <li key={hit.id ?? hit.title} className="rounded-xl border bg-white p-4">
-            <Link
-              href={hit.id ? `/movies/${hit.id}` : "#"}
-              className="font-medium text-blue-700 hover:underline"
-            >
-              {hit.title ?? hit.id ?? "Untitled"}
-            </Link>
-            {hit.description ? (
-              <p className="mt-1 text-sm text-zinc-600 line-clamp-2">{hit.description}</p>
-            ) : null}
-          </li>
-        ))}
+        {hits.map((hit) => {
+          const id = hit.id ?? hit.movieId ?? hit.title;
+          return (
+            <li key={id} className="rounded-xl border bg-white p-4">
+              <Link
+                href={`/movies/${hit.id ?? hit.movieId}`}
+                className="font-medium text-blue-700 hover:underline"
+              >
+                {hit.title}
+              </Link>
+              {hit.description ? (
+                <p className="mt-1 text-sm text-zinc-600 line-clamp-2">{hit.description}</p>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

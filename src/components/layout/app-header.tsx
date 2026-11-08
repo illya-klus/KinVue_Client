@@ -8,6 +8,7 @@ const links = [
   { href: "/movies/search", label: "Movies" },
   { href: "/watchlist", label: "Watchlist" },
   { href: "/friends", label: "Friends" },
+  { href: "/users/search", label: "People" },
   { href: "/rooms", label: "Rooms" },
   { href: "/profile", label: "Profile" },
 ];

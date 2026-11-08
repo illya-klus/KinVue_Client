@@ -14,10 +14,18 @@ function formatNotification(item: NotificationItem): string {
         (payload.payload as { roomId?: string } | undefined)?.roomId;
       return roomId ? `Room invite · ${roomId}` : "Room invite";
     }
-    case "FRIEND_REQUEST_CREATED":
-      return "New friend request";
-    case "FRIEND_REQUEST_ACCEPTED":
-      return "Friend request accepted";
+    case "FRIEND_REQUEST_CREATED": {
+      const from =
+        (payload.fromUserId as string | undefined) ??
+        (payload.payload as { fromUserId?: string } | undefined)?.fromUserId;
+      return from ? `Friend request from ${from}` : "New friend request";
+    }
+    case "FRIEND_REQUEST_ACCEPTED": {
+      const from =
+        (payload.fromUserId as string | undefined) ??
+        (payload.payload as { fromUserId?: string } | undefined)?.fromUserId;
+      return from ? `${from} accepted your request` : "Friend request accepted";
+    }
     default:
       return item.type;
   }
