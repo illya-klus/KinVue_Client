@@ -10,7 +10,10 @@ test.describe("Notifications: friend + room invite (KIN-125)", () => {
     // Operator fills credentials via env in CI later.
     const email = process.env.E2E_USER_EMAIL;
     const password = process.env.E2E_USER_PASSWORD;
-    test.skip(!email || !password, "E2E_USER_EMAIL and E2E_USER_PASSWORD required");
+    if (!email || !password) {
+      test.skip(true, "E2E_USER_EMAIL and E2E_USER_PASSWORD required");
+      return;
+    }
 
     await page.goto("/login");
     await page.getByLabel("Email").fill(email);
