@@ -1,22 +1,24 @@
 import { gatewayFetch } from "@/lib/gateway/client";
 import type { FriendRequestRow, FriendRow } from "@/lib/types/domain";
 
-export function fetchFriends() {
-  return gatewayFetch<{ items?: FriendRow[] } | FriendRow[]>("/api/friends").then(
-    (data) => (Array.isArray(data) ? data : (data.items ?? [])),
-  );
+export type Page<T> = { items: T[]; nextCursor: string | null };
+
+function fetchPage<T>(path: string, cursor?: string) {
+  const params = new URLSearchParams({ limit: "20" });
+  if (cursor) params.set("cursor", cursor);
+  return gatewayFetch<Page<T>>(`${path}?${params}`);
 }
 
-export function fetchIncomingRequests() {
-  return gatewayFetch<{ items?: FriendRequestRow[] } | FriendRequestRow[]>(
-    "/api/friend-requests/incoming",
-  ).then((data) => (Array.isArray(data) ? data : (data.items ?? [])));
+export function fetchFriends(cursor?: string) {
+  return fetchPage<FriendRow>("/api/friends", cursor);
 }
 
-export function fetchOutgoingRequests() {
-  return gatewayFetch<{ items?: FriendRequestRow[] } | FriendRequestRow[]>(
-    "/api/friend-requests/outgoing",
-  ).then((data) => (Array.isArray(data) ? data : (data.items ?? [])));
+export function fetchIncomingRequests(cursor?: string) {
+  return fetchPage<FriendRequestRow>("/api/friend-requests/incoming", cursor);
+}
+
+export function fetchOutgoingRequests(cursor?: string) {
+  return fetchPage<FriendRequestRow>("/api/friend-requests/outgoing", cursor);
 }
 
 export function sendFriendRequest(targetUserId: string) {
