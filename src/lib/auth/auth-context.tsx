@@ -9,7 +9,12 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { bindAuthHandlers, gatewayFetch } from "@/lib/gateway/client";
+import {
+  bindAuthHandlers,
+  gatewayFetch,
+  refreshAccessToken,
+  invalidateSessionRefresh,
+} from "@/lib/gateway/client";
 import {
   clearTokens,
   decodeJwtScopes,
@@ -19,7 +24,6 @@ import {
 
 type AuthState = {
   accessToken: string | null;
-  refreshToken: string | null;
   isAdmin: boolean;
   isReady: boolean;
 };
@@ -40,48 +44,44 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({
     accessToken: null,
-    refreshToken: null,
     isAdmin: false,
     isReady: false,
   });
 
-  const applyTokens = useCallback(
-    (accessToken: string | null, refreshToken: string | null) => {
-      writeTokens(accessToken, refreshToken);
-      setState({
-        accessToken,
-        refreshToken,
-        isAdmin: accessToken ? decodeJwtScopes(accessToken).includes("admin") : false,
-        isReady: true,
-      });
-    },
-    [],
-  );
+  const applyTokens = useCallback((accessToken: string | null) => {
+    writeTokens(accessToken);
+    setState({
+      accessToken,
+      isAdmin: accessToken
+        ? decodeJwtScopes(accessToken).includes("admin")
+        : false,
+      isReady: true,
+    });
+  }, []);
 
   useEffect(() => {
+    let active = true;
     const stored = readTokens();
-    applyTokens(stored.accessToken, stored.refreshToken);
     bindAuthHandlers({
       getAccessToken: () => readTokens().accessToken,
-      getRefreshToken: () => readTokens().refreshToken,
       onTokens: (pair) => {
-        if (!pair) {
-          applyTokens(null, null);
-          return;
-        }
-        applyTokens(
-          pair.accessToken,
-          pair.refreshToken ?? readTokens().refreshToken,
-        );
+        if (active) applyTokens(pair?.accessToken ?? null);
       },
     });
+    if (stored.accessToken) applyTokens(stored.accessToken);
+    else
+      void refreshAccessToken().then((token) => {
+        if (active) applyTokens(token);
+      });
+    return () => {
+      active = false;
+    };
   }, [applyTokens]);
 
   const login = useCallback(
     async (email: string, password: string) => {
       const data = await gatewayFetch<{
         accessToken: string;
-        refreshToken?: string;
       }>(
         "/api/auth/login",
         {
@@ -91,7 +91,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         },
         { auth: false },
       );
-      applyTokens(data.accessToken, data.refreshToken ?? null);
+      invalidateSessionRefresh();
+      applyTokens(data.accessToken);
     },
     [applyTokens],
   );
@@ -118,10 +119,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await gatewayFetch("/api/auth/logout", { method: "POST" }, { auth: true });
+      await gatewayFetch(
+        "/api/auth/logout",
+        { method: "POST" },
+        { auth: true },
+      );
     } finally {
+      invalidateSessionRefresh();
       clearTokens();
-      applyTokens(null, null);
+      applyTokens(null);
     }
   }, [applyTokens]);
 

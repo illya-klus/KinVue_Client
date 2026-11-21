@@ -8,9 +8,18 @@ const person = (userId: string, username: string) => ({
 });
 
 test.beforeEach(async ({ page }) => {
-  await page.route(`${origin}/api/auth/login`, (route) =>
-    route.fulfill({ json: { accessToken: "test-access-token" } }),
+  let loggedIn = false;
+  await page.route(`${origin}/api/auth/refresh`, (route) =>
+    route.fulfill(
+      loggedIn
+        ? { json: { accessToken: "test-access-token" } }
+        : { status: 401, json: { message: "No session" } },
+    ),
   );
+  await page.route(`${origin}/api/auth/login`, (route) => {
+    loggedIn = true;
+    return route.fulfill({ json: { accessToken: "test-access-token" } });
+  });
   await page.route(`${origin}/api/notifications**`, (route) =>
     route.fulfill({ json: { items: [] } }),
   );

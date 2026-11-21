@@ -1,40 +1,34 @@
-const ACCESS_KEY = "kinvue.accessToken";
-const REFRESH_KEY = "kinvue.refreshToken";
+let accessTokenInMemory: string | null = null;
 
 export function readTokens(): {
   accessToken: string | null;
-  refreshToken: string | null;
 } {
   if (typeof window === "undefined") {
-    return { accessToken: null, refreshToken: null };
+    return { accessToken: null };
   }
   return {
-    accessToken: sessionStorage.getItem(ACCESS_KEY),
-    refreshToken: sessionStorage.getItem(REFRESH_KEY),
+    accessToken: accessTokenInMemory,
   };
 }
 
-export function writeTokens(
-  accessToken: string | null,
-  refreshToken: string | null,
-): void {
+export function writeTokens(accessToken: string | null): void {
   if (typeof window === "undefined") {
     return;
   }
-  if (accessToken) {
-    sessionStorage.setItem(ACCESS_KEY, accessToken);
-  } else {
-    sessionStorage.removeItem(ACCESS_KEY);
-  }
-  if (refreshToken) {
-    sessionStorage.setItem(REFRESH_KEY, refreshToken);
-  } else {
-    sessionStorage.removeItem(REFRESH_KEY);
+  accessTokenInMemory = accessToken;
+  // Discard tokens persisted by older client versions; never restore them.
+  try {
+    for (const key of ["kinvue.accessToken", "kinvue.refreshToken"]) {
+      sessionStorage.removeItem(key);
+      localStorage.removeItem(key);
+    }
+  } catch {
+    /* Storage can be disabled; the session uses memory and HttpOnly cookies. */
   }
 }
 
 export function clearTokens(): void {
-  writeTokens(null, null);
+  writeTokens(null);
 }
 
 export function decodeJwtScopes(token: string): string[] {
@@ -43,7 +37,9 @@ export function decodeJwtScopes(token: string): string[] {
     if (!payload) {
       return [];
     }
-    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/")));
+    const json = JSON.parse(
+      atob(payload.replace(/-/g, "+").replace(/_/g, "/")),
+    );
     const scopes = json.scope ?? json.scopes ?? json.scp;
     if (typeof scopes === "string") {
       return scopes.split(/\s+/).filter(Boolean);

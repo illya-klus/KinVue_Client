@@ -12,9 +12,8 @@ async function login(page: Page, admin = false) {
   const payload = Buffer.from(
     JSON.stringify({ scopes: admin ? ["admin"] : ["user"] }),
   ).toString("base64url");
-  await page.addInitScript(
-    (token) => sessionStorage.setItem("kinvue.accessToken", token),
-    `test.${payload}.signature`,
+  await page.route(api + "/auth/refresh", (r) =>
+    r.fulfill({ json: { accessToken: `test.${payload}.signature` } }),
   );
   await page.route(api + "/notifications**", (r) =>
     r.fulfill({ json: { items: [] } }),

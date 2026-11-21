@@ -5,20 +5,21 @@ const gatewayUrl =
 
 export type TokenPair = {
   accessToken: string;
-  refreshToken?: string;
 };
 
 let getAccessToken: (() => string | null) | null = null;
-let getRefreshToken: (() => string | null) | null = null;
 let onTokens: ((tokens: TokenPair | null) => void) | null = null;
+let refreshInFlight: Promise<string | null> | null = null;
+let sessionVersion = 0;
+export function invalidateSessionRefresh() {
+  sessionVersion += 1;
+}
 
 export function bindAuthHandlers(handlers: {
   getAccessToken: () => string | null;
-  getRefreshToken: () => string | null;
   onTokens: (tokens: TokenPair | null) => void;
 }): void {
   getAccessToken = handlers.getAccessToken;
-  getRefreshToken = handlers.getRefreshToken;
   onTokens = handlers.onTokens;
 }
 
@@ -30,26 +31,27 @@ async function parseBody(response: Response): Promise<ApiErrorBody | null> {
   }
 }
 
-async function refreshAccessToken(): Promise<string | null> {
-  const refreshToken = getRefreshToken?.() ?? null;
-  if (!refreshToken) {
-    return null;
-  }
-  const response = await fetch(`${gatewayUrl}/api/auth/refresh`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ refreshToken }),
+export function refreshAccessToken(): Promise<string | null> {
+  if (refreshInFlight) return refreshInFlight;
+  const version = sessionVersion;
+  refreshInFlight = (async () => {
+    try {
+      const response = await fetch(`${gatewayUrl}/api/auth/refresh`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const data = response.ok ? ((await response.json()) as TokenPair) : null;
+      if (version !== sessionVersion) return null;
+      onTokens?.(data?.accessToken ? data : null);
+      return data?.accessToken ?? null;
+    } catch {
+      if (version === sessionVersion) onTokens?.(null);
+      return null;
+    }
+  })().finally(() => {
+    refreshInFlight = null;
   });
-  if (!response.ok) {
-    onTokens?.(null);
-    return null;
-  }
-  const data = (await response.json()) as TokenPair;
-  if (data.accessToken) {
-    onTokens?.(data);
-    return data.accessToken;
-  }
-  return null;
+  return refreshInFlight;
 }
 
 export async function gatewayFetch<T>(
@@ -66,18 +68,22 @@ export async function gatewayFetch<T>(
     }
   }
   const url = path.startsWith("http") ? path : `${gatewayUrl}${path}`;
-  let response = await fetch(url, { ...init, headers });
+  let response = await fetch(url, { ...init, headers, credentials: "include" });
 
   if (
     response.status === 401 &&
     options?.retryOn401 !== false &&
     auth &&
-    getRefreshToken?.()
+    getAccessToken?.()
   ) {
-    const next = await refreshAccessToken();
+    const current = getAccessToken?.();
+    const next =
+      current && headers.get("authorization") !== `Bearer ${current}`
+        ? current
+        : await refreshAccessToken();
     if (next) {
       headers.set("authorization", `Bearer ${next}`);
-      response = await fetch(url, { ...init, headers });
+      response = await fetch(url, { ...init, headers, credentials: "include" });
     }
   }
 

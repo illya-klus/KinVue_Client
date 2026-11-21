@@ -35,3 +35,5 @@ Run `pnpm test:e2e` for browser checks. Sprint 3 adds eight tests for movie admi
 Sprint 3 uses `GET /api/admin/movies/:id` to load `/admin/movies/:id/edit`, PATCH to save metadata, and POST publish/schedule. A saved catalog entry may still be waiting for asynchronous search indexing. Blank optional duration/poster fields are omitted on create and cleared with null on edit. Watchlist uses the authenticated caller, and anonymous users are sent to login.
 
 The backend's `doc/runbooks/movie-sprint-3.md` describes migrations and `services/movie/test/browser-smoke.cjs`, which also verified this client against real Gateway, Movie, PostgreSQL 16 and Meilisearch with a test Auth/JWKS issuer. S3/FFmpeg playback and Rooms are later backend work. This branch depends on the Sprint 2 client PR #1.
+
+The client now follows the merged Auth cookie contract: access tokens stay in memory, refresh uses the HttpOnly cookie with credentials, and reload restores the session. Concurrent 401 responses share a refresh. The cookie-session browser test covers reload, expired access and logout; legacy browser-storage tokens are discarded.

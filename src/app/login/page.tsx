@@ -8,7 +8,7 @@ import { GatewayError } from "@/lib/gateway/errors";
 import { StatusMessage } from "@/components/ui/status-message";
 
 export default function LoginPage() {
-  const { login, accessToken } = useAuth();
+  const { login, accessToken, isReady } = useAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -27,7 +27,6 @@ export default function LoginPage() {
     setError(null);
     try {
       await login(email.trim(), password);
-      router.push("/movies/search");
     } catch (err) {
       if (err instanceof GatewayError && err.status === 401) {
         setError("Invalid email or password.");
@@ -42,8 +41,13 @@ export default function LoginPage() {
   return (
     <div className="mx-auto max-w-md space-y-6">
       <h1 className="text-2xl font-semibold">Sign in</h1>
-      {error ? <StatusMessage tone="error" title="Could not sign in" detail={error} /> : null}
-      <form onSubmit={onSubmit} className="space-y-4 rounded-xl border bg-white p-6">
+      {error ? (
+        <StatusMessage tone="error" title="Could not sign in" detail={error} />
+      ) : null}
+      <form
+        onSubmit={onSubmit}
+        className="space-y-4 rounded-xl border bg-white p-6"
+      >
         <label className="block text-sm">
           Email
           <input
@@ -66,7 +70,7 @@ export default function LoginPage() {
         </label>
         <button
           type="submit"
-          disabled={loading}
+          disabled={loading || !isReady}
           className="w-full rounded-lg bg-zinc-900 py-2 text-sm font-medium text-white disabled:opacity-50"
         >
           {loading ? "Signing in…" : "Sign in"}

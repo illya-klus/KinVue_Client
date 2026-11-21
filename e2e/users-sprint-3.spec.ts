@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 const api = "http://localhost:4000/api";
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() =>
-    sessionStorage.setItem("kinvue.accessToken", "user-fixture"),
+  await page.route(api + "/auth/refresh", (r) =>
+    r.fulfill({ json: { accessToken: "user-fixture" } }),
   );
   await page.route(api + "/notifications**", (r) =>
     r.fulfill({ json: { items: [] } }),
