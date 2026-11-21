@@ -20,26 +20,38 @@ function UserSearchContent() {
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
   const [hits, setHits] = useState<UserSearchHit[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState<Record<string, boolean>>({});
 
   async function onSearch(event: FormEvent) {
     event.preventDefault();
+    if (loading) return;
     const q = query.trim();
     if (q.length < 2) {
       setError("Enter at least 2 characters.");
       return;
     }
-    setSubmitted(q);
+    await load(q);
+  }
+
+  async function load(q: string, cursor?: string) {
+    if (!cursor) {
+      setSubmitted(q);
+      setHits([]);
+      setNextCursor(null);
+    }
     setLoading(true);
     setError(null);
     try {
-      const data = await searchUsers(q);
-      setHits(data.items ?? []);
+      const data = await searchUsers(q, cursor);
+      setHits((previous) =>
+        cursor ? [...previous, ...data.items] : data.items,
+      );
+      setNextCursor(data.nextCursor ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
-      setHits([]);
     } finally {
       setLoading(false);
     }
@@ -72,9 +84,15 @@ function UserSearchContent() {
           Search
         </button>
       </form>
-      {error ? <StatusMessage tone="error" title="Search" detail={error} /> : null}
-      {submitted && hits.length === 0 && !loading ? (
-        <StatusMessage tone="empty" title="No users" detail={`No matches for “${submitted}”.`} />
+      {error ? (
+        <StatusMessage tone="error" title="Search" detail={error} />
+      ) : null}
+      {submitted && hits.length === 0 && !loading && !error ? (
+        <StatusMessage
+          tone="empty"
+          title="No users"
+          detail={`No matches for “${submitted}”.`}
+        />
       ) : null}
       <ul className="space-y-2">
         {hits.map((hit) => (
@@ -100,6 +118,16 @@ function UserSearchContent() {
           </li>
         ))}
       </ul>
+      {nextCursor ? (
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => void load(submitted, nextCursor)}
+          className="rounded-lg border px-3 py-1 text-sm"
+        >
+          Load more
+        </button>
+      ) : null}
       <p className="text-sm text-zinc-600">
         Manage requests on{" "}
         <Link className="text-blue-600 hover:underline" href="/friends">
