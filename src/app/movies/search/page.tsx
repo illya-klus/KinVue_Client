@@ -17,25 +17,32 @@ export default function MovieSearchPage() {
 
   useEffect(() => {
     const query = debouncedQ.trim();
-    if (query.length > 0 && query.length < 2) {
+    if (query.length < 2 || q.trim() !== query) {
       setHits([]);
       setError(null);
+      setLoading(false);
       return;
     }
+    let active = true;
     void (async () => {
       setLoading(true);
       setError(null);
       try {
         const data = await searchMovies(query, genre.trim() || undefined);
+        if (!active) return;
         setHits(data.hits ?? []);
       } catch (err) {
+        if (!active) return;
         setError(err instanceof Error ? err.message : "Search failed");
         setHits([]);
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     })();
-  }, [debouncedQ, genre]);
+    return () => {
+      active = false;
+    };
+  }, [debouncedQ, genre, q]);
 
   const queryTooShort = q.trim().length === 1;
 
@@ -46,22 +53,32 @@ export default function MovieSearchPage() {
         <input
           className="min-w-[12rem] flex-1 rounded-lg border px-3 py-2 text-sm"
           placeholder="Search (min 2 chars)…"
+          aria-label="Search movies"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
         <input
           className="w-40 rounded-lg border px-3 py-2 text-sm"
           placeholder="Genre"
+          aria-label="Genre"
           value={genre}
           onChange={(e) => setGenre(e.target.value)}
         />
       </div>
       {queryTooShort ? (
-        <StatusMessage title="Keep typing" detail="Search needs at least 2 characters." />
+        <StatusMessage
+          title="Keep typing"
+          detail="Search needs at least 2 characters."
+        />
       ) : null}
-      {error ? <StatusMessage tone="error" title="Search error" detail={error} /> : null}
+      {error ? (
+        <StatusMessage tone="error" title="Search error" detail={error} />
+      ) : null}
       {loading ? <p className="text-sm text-zinc-600">Searching…</p> : null}
-      {!loading && !error && hits.length === 0 && debouncedQ.trim().length >= 2 ? (
+      {!loading &&
+      !error &&
+      hits.length === 0 &&
+      debouncedQ.trim().length >= 2 ? (
         <StatusMessage tone="empty" title="No results" />
       ) : null}
       <ul className="space-y-3">
@@ -76,7 +93,9 @@ export default function MovieSearchPage() {
                 {hit.title}
               </Link>
               {hit.description ? (
-                <p className="mt-1 text-sm text-zinc-600 line-clamp-2">{hit.description}</p>
+                <p className="mt-1 text-sm text-zinc-600 line-clamp-2">
+                  {hit.description}
+                </p>
               ) : null}
             </li>
           );
