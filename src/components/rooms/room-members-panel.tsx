@@ -10,7 +10,13 @@ import {
 } from "@/lib/api/rooms";
 import { StatusMessage } from "@/components/ui/status-message";
 
-export function RoomMembersPanel({ roomId }: { roomId: string }) {
+export function RoomMembersPanel({
+  roomId,
+  refreshVersion = 0,
+}: {
+  roomId: string;
+  refreshVersion?: number;
+}) {
   const [room, setRoom] = useState<RoomMembersResponse | null>(null);
   const [targetUserId, setTargetUserId] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -22,13 +28,15 @@ export function RoomMembersPanel({ roomId }: { roomId: string }) {
       setRoom(await getRoomMembers(roomId));
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load room members");
+      setError(
+        err instanceof Error ? err.message : "Could not load room members",
+      );
     }
   }, [roomId]);
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, refreshVersion]);
 
   async function sendInvite() {
     setBusy(true);
@@ -55,7 +63,9 @@ export function RoomMembersPanel({ roomId }: { roomId: string }) {
       await navigator.clipboard.writeText(url);
       setNotice("Private invite link copied.");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create invite link");
+      setError(
+        err instanceof Error ? err.message : "Could not create invite link",
+      );
     } finally {
       setBusy(false);
     }
@@ -68,24 +78,35 @@ export function RoomMembersPanel({ roomId }: { roomId: string }) {
       await changeRoomMemberRole(roomId, userId, role);
       await refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not change member role");
+      setError(
+        err instanceof Error ? err.message : "Could not change member role",
+      );
     } finally {
       setBusy(false);
     }
   }
 
   if (!room) {
-    return error ? <StatusMessage tone="error" title="Room members" detail={error} /> : <StatusMessage title="Loading room members…" />;
+    return error ? (
+      <StatusMessage tone="error" title="Room members" detail={error} />
+    ) : (
+      <StatusMessage title="Loading room members…" />
+    );
   }
   const isOwner = room.currentUserRole === "OWNER";
 
   return (
     <section className="space-y-3 rounded-xl border bg-white p-4">
       <h2 className="text-sm font-semibold">Members ({room.members.length})</h2>
-      {error ? <StatusMessage tone="error" title="Room members" detail={error} /> : null}
+      {error ? (
+        <StatusMessage tone="error" title="Room members" detail={error} />
+      ) : null}
       <ul className="space-y-2">
         {room.members.map((member) => (
-          <li key={member.userId} className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          <li
+            key={member.userId}
+            className="flex flex-wrap items-center justify-between gap-3 text-sm"
+          >
             <span className="min-w-0 break-all">
               {member.userId} · {member.role} · {member.presence.toLowerCase()}
             </span>
@@ -96,7 +117,12 @@ export function RoomMembersPanel({ roomId }: { roomId: string }) {
                   aria-label={`Role for ${member.userId}`}
                   value={member.role}
                   disabled={busy}
-                  onChange={(event) => void setRole(member.userId, event.target.value as "CONTROLLER" | "VIEWER")}
+                  onChange={(event) =>
+                    void setRole(
+                      member.userId,
+                      event.target.value as "CONTROLLER" | "VIEWER",
+                    )
+                  }
                   className="rounded-lg border px-2 py-1"
                 >
                   <option value="VIEWER">Viewer</option>
@@ -118,18 +144,32 @@ export function RoomMembersPanel({ roomId }: { roomId: string }) {
               value={targetUserId}
               onChange={(event) => setTargetUserId(event.target.value)}
             />
-            <button type="button" disabled={busy || !targetUserId.trim()} className="rounded-lg border px-3 text-sm disabled:opacity-50" onClick={() => void sendInvite()}>
+            <button
+              type="button"
+              disabled={busy || !targetUserId.trim()}
+              className="rounded-lg border px-3 text-sm disabled:opacity-50"
+              onClick={() => void sendInvite()}
+            >
               Invite
             </button>
             {room.visibility === "PRIVATE" ? (
-              <button type="button" disabled={busy} className="rounded-lg border px-3 text-sm disabled:opacity-50" onClick={() => void copyInviteLink()}>
+              <button
+                type="button"
+                disabled={busy}
+                className="rounded-lg border px-3 text-sm disabled:opacity-50"
+                onClick={() => void copyInviteLink()}
+              >
                 Create and copy invite link
               </button>
             ) : null}
           </div>
         </div>
       ) : null}
-      {notice ? <p role="status" className="text-sm text-green-700">{notice}</p> : null}
+      {notice ? (
+        <p role="status" className="text-sm text-green-700">
+          {notice}
+        </p>
+      ) : null}
     </section>
   );
 }

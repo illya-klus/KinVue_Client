@@ -37,3 +37,9 @@ Sprint 3 uses `GET /api/admin/movies/:id` to load `/admin/movies/:id/edit`, PATC
 The backend's `doc/runbooks/movie-sprint-3.md` describes migrations and `services/movie/test/browser-smoke.cjs`, which also verified this client against real Gateway, Movie, PostgreSQL 16 and Meilisearch with a test Auth/JWKS issuer. S3/FFmpeg playback and Rooms are later backend work. This branch depends on the Sprint 2 client PR #1.
 
 The client now follows the merged Auth cookie contract: access tokens stay in memory, refresh uses the HttpOnly cookie with credentials, and reload restores the session. Concurrent 401 responses share a refresh. The cookie-session browser test covers reload, expired access and logout; legacy browser-storage tokens are discarded.
+
+## Sprint 4 realtime
+
+The room page now authenticates directly with Rooms WebSocket, waits for room.state_sync, gates play/pause/seek by OWNER or CONTROLLER, ignores older versions, and reconnects with a fresh cookie-backed session. Chat uses message IDs and 1–1000 characters; the five reactions are like/laugh/wow/sad/fire. Heartbeat is 30 seconds, leave stops participation. Room media follows the server anchor with native controls disabled; solo playback sends no room events.
+
+Four Playwright realtime cases complement the existing room/member tests. The backend runbook doc/runbooks/rooms-sprint-4.md documents a real browser + two Rooms instances + Redis 7 smoke, including restart/resync. HTTP Auth/metadata are fixtures in that smoke; signed media delivery remains separate work.

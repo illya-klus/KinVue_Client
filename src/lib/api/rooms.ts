@@ -27,7 +27,7 @@ export type ScheduleRoomPayload = {
 export type RoomMember = {
   userId: string;
   role: "OWNER" | "CONTROLLER" | "VIEWER";
-  presence: "ONLINE" | "OFFLINE";
+  presence: "ONLINE" | "DISCONNECTED" | "LEFT" | "OFFLINE";
 };
 
 export type RoomMembersResponse = {
@@ -40,9 +40,9 @@ export type RoomMembersResponse = {
 };
 
 export function listPublicRooms() {
-  return gatewayFetch<{ items?: PublicRoom[] } | PublicRoom[]>("/api/rooms/public").then(
-    (data) => (Array.isArray(data) ? data : (data.items ?? [])),
-  );
+  return gatewayFetch<{ items?: PublicRoom[] } | PublicRoom[]>(
+    "/api/rooms/public",
+  ).then((data) => (Array.isArray(data) ? data : (data.items ?? [])));
 }
 
 export function createRoom(body: CreateRoomPayload) {
@@ -62,15 +62,18 @@ export function createScheduledRoom(body: ScheduleRoomPayload) {
 }
 
 export function listScheduledRooms() {
-  return gatewayFetch<{ items?: ScheduledRoom[] } | ScheduledRoom[]>("/api/scheduled-rooms").then(
-    (data) => (Array.isArray(data) ? data : (data.items ?? [])),
-  );
+  return gatewayFetch<{ items?: ScheduledRoom[] } | ScheduledRoom[]>(
+    "/api/scheduled-rooms",
+  ).then((data) => (Array.isArray(data) ? data : (data.items ?? [])));
 }
 
 export function cancelScheduledRoom(scheduleId: string) {
-  return gatewayFetch<ScheduledRoom>(`/api/scheduled-rooms/${scheduleId}/cancel`, {
-    method: "POST",
-  });
+  return gatewayFetch<ScheduledRoom>(
+    `/api/scheduled-rooms/${scheduleId}/cancel`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 export function inviteToRoom(roomId: string, targetUserId: string) {
@@ -82,10 +85,11 @@ export function inviteToRoom(roomId: string, targetUserId: string) {
 }
 
 export function createRoomInviteLink(roomId: string) {
-  return gatewayFetch<{ roomId: string; inviteToken: string; expiresAt: string }>(
-    `/api/rooms/${roomId}/invites/link`,
-    { method: "POST" },
-  );
+  return gatewayFetch<{
+    roomId: string;
+    inviteToken: string;
+    expiresAt: string;
+  }>(`/api/rooms/${roomId}/invites/link`, { method: "POST" });
 }
 
 export function acceptRoomInvite(roomId: string, token: string) {
