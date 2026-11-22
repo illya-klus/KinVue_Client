@@ -40,7 +40,8 @@ test.describe("Live registration through Gateway (KIN-247)", () => {
     await page.getByRole("button", { name: "Sign in" }).click();
     await expect(page).toHaveURL(/\/movies\/search$/);
 
-    await page.goto("/profile");
+    await page.getByRole("link", { name: "Profile" }).click();
+    await expect(page).toHaveURL(/\/profile$/);
     await expect(
       page.getByRole("heading", { name: "Your profile" }),
     ).toBeVisible();
