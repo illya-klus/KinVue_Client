@@ -5,8 +5,8 @@ import { useParams } from "next/navigation";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { HlsPlayer } from "@/components/media/hls-player";
 import { useRoomSocket } from "@/components/rooms/use-room-socket";
+import { RoomMembersPanel } from "@/components/rooms/room-members-panel";
 import { StatusMessage } from "@/components/ui/status-message";
-import { inviteToRoom } from "@/lib/api/rooms";
 
 export default function RoomPage() {
   return (
@@ -20,8 +20,6 @@ function RoomContent() {
   const params = useParams<{ id: string }>();
   const { state, sendChat, sendPlayback, reconnect } = useRoomSocket(params.id);
   const [chatText, setChatText] = useState("");
-  const [inviteUserId, setInviteUserId] = useState("");
-  const [inviteError, setInviteError] = useState<string | null>(null);
 
   function onChatSubmit(event: FormEvent) {
     event.preventDefault();
@@ -30,16 +28,6 @@ function RoomContent() {
     }
     sendChat(chatText);
     setChatText("");
-  }
-
-  async function onInvite() {
-    setInviteError(null);
-    try {
-      await inviteToRoom(params.id, inviteUserId.trim());
-      setInviteUserId("");
-    } catch (err) {
-      setInviteError(err instanceof Error ? err.message : "Invite failed");
-    }
   }
 
   return (
@@ -91,28 +79,7 @@ function RoomContent() {
           Send
         </button>
       </form>
-      <div className="rounded-xl border bg-white p-4 space-y-2">
-        <h2 className="text-sm font-semibold">Invite friend</h2>
-        <div className="flex gap-2">
-          <input
-            className="flex-1 rounded-lg border px-3 py-2 text-sm"
-            placeholder="Target user UUID"
-            value={inviteUserId}
-            onChange={(e) => setInviteUserId(e.target.value)}
-          />
-          <button type="button" className="rounded-lg border px-3 text-sm" onClick={() => void onInvite()}>
-            Invite
-          </button>
-        </div>
-        <button
-          type="button"
-          className="text-xs text-blue-600"
-          onClick={() => void navigator.clipboard.writeText(`${window.location.origin}/rooms/${params.id}`)}
-        >
-          Copy invite URL
-        </button>
-        {inviteError ? <p className="text-sm text-red-700">{inviteError}</p> : null}
-      </div>
+      <RoomMembersPanel roomId={params.id} />
     </section>
   );
 }

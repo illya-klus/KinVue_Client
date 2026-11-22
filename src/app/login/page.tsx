@@ -15,9 +15,14 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  function getReturnTo() {
+    const target = new URLSearchParams(window.location.search).get("returnTo");
+    return target?.startsWith("/") && !target.startsWith("//") ? target : "/movies/search";
+  }
+
   useEffect(() => {
     if (accessToken) {
-      router.replace("/movies/search");
+      router.replace(getReturnTo());
     }
   }, [accessToken, router]);
 
