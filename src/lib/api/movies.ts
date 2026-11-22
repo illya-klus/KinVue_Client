@@ -4,11 +4,23 @@ import type {
   MovieSearchResponse,
   SchedulePublishPayload,
 } from "./movies.types";
-import type { MediaAccessResponse, MovieSummary, WatchlistItem } from "@/lib/types/domain";
+import type {
+  MediaAccessResponse,
+  MovieSummary,
+  WatchlistItem,
+} from "@/lib/types/domain";
 
-export type { CreateMoviePayload, SchedulePublishPayload } from "./movies.types";
+export type {
+  CreateMoviePayload,
+  SchedulePublishPayload,
+} from "./movies.types";
 
-export function searchMovies(q: string, genre?: string, limit = 20, offset = 0) {
+export function searchMovies(
+  q: string,
+  genre?: string,
+  limit = 20,
+  offset = 0,
+) {
   const params = new URLSearchParams();
   if (q) {
     params.set("q", q);
@@ -26,13 +38,20 @@ export function searchMovies(q: string, genre?: string, limit = 20, offset = 0) 
 }
 
 export function fetchMovie(movieId: string) {
-  return gatewayFetch<MovieSummary>(`/api/movies/${movieId}`, {}, { auth: false });
+  return gatewayFetch<MovieSummary>(
+    `/api/movies/${movieId}`,
+    {},
+    { auth: false },
+  );
+}
+export function fetchAdminMovie(movieId: string) {
+  return gatewayFetch<MovieSummary>(`/api/admin/movies/${movieId}`);
 }
 
 export function fetchWatchlist() {
-  return gatewayFetch<{ items?: WatchlistItem[] } | WatchlistItem[]>("/api/watchlist").then(
-    (data) => (Array.isArray(data) ? data : (data.items ?? [])),
-  );
+  return gatewayFetch<{ items?: WatchlistItem[] } | WatchlistItem[]>(
+    "/api/watchlist",
+  ).then((data) => (Array.isArray(data) ? data : (data.items ?? [])));
 }
 
 export function addToWatchlist(movieId: string) {
@@ -51,7 +70,10 @@ export function createMovie(body: CreateMoviePayload) {
   });
 }
 
-export function updateMovie(movieId: string, body: Partial<CreateMoviePayload>) {
+export function updateMovie(
+  movieId: string,
+  body: Partial<CreateMoviePayload>,
+) {
   return gatewayFetch<MovieSummary>(`/api/admin/movies/${movieId}`, {
     method: "PATCH",
     headers: { "content-type": "application/json" },
@@ -60,11 +82,17 @@ export function updateMovie(movieId: string, body: Partial<CreateMoviePayload>) 
 }
 
 export function publishMovie(movieId: string) {
-  return gatewayFetch(`/api/admin/movies/${movieId}/publish`, { method: "POST" });
+  return gatewayFetch<
+    MovieSummary & {
+      message?: string;
+      catalogSaved: boolean;
+      searchIndex: "QUEUED" | "PENDING";
+    }
+  >(`/api/admin/movies/${movieId}/publish`, { method: "POST" });
 }
 
 export function scheduleMovie(movieId: string, body: SchedulePublishPayload) {
-  return gatewayFetch(`/api/admin/movies/${movieId}/schedule`, {
+  return gatewayFetch<MovieSummary>(`/api/admin/movies/${movieId}/schedule`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -72,7 +100,10 @@ export function scheduleMovie(movieId: string, body: SchedulePublishPayload) {
 }
 
 export function requestMediaAccess(movieId: string) {
-  return gatewayFetch<MediaAccessResponse>(`/api/movies/${movieId}/media-access`, {
-    method: "POST",
-  });
+  return gatewayFetch<MediaAccessResponse>(
+    `/api/movies/${movieId}/media-access`,
+    {
+      method: "POST",
+    },
+  );
 }

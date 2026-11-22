@@ -86,20 +86,40 @@ function ProfileContent() {
     <section className="mx-auto max-w-lg space-y-6">
       <div>
         <h1 className="text-2xl font-semibold">Your profile</h1>
+        {profile.avatarUrl ? (
+          // User-provided remote URLs are not limited to a Next Image host allowlist.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={profile.avatarUrl}
+            alt={`${profile.displayName}'s avatar`}
+            width={64}
+            height={64}
+            className="my-3 rounded-full"
+          />
+        ) : null}
         <p className="text-sm text-zinc-600">
           @{profile.username}
-          {profile.createdAt ? ` · joined ${new Date(profile.createdAt).toLocaleDateString()}` : ""}
+          {profile.createdAt
+            ? ` · joined ${new Date(profile.createdAt).toLocaleDateString()}`
+            : ""}
         </p>
       </div>
       {saved ? <StatusMessage title="Profile saved" /> : null}
-      {error ? <StatusMessage tone="error" title="Error" detail={error} /> : null}
-      <form onSubmit={onSubmit} className="space-y-4 rounded-xl border bg-white p-6">
+      {error ? (
+        <StatusMessage tone="error" title="Error" detail={error} />
+      ) : null}
+      <form
+        onSubmit={onSubmit}
+        className="space-y-4 rounded-xl border bg-white p-6"
+      >
         <label className="block text-sm">
           Display name
           <input
             className="mt-1 w-full rounded-lg border px-3 py-2"
             value={form.displayName}
-            onChange={(e) => setForm((f) => ({ ...f, displayName: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, displayName: e.target.value }))
+            }
             required
           />
         </label>
@@ -108,7 +128,9 @@ function ProfileContent() {
           <input
             className="mt-1 w-full rounded-lg border px-3 py-2"
             value={form.avatarUrl}
-            onChange={(e) => setForm((f) => ({ ...f, avatarUrl: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, avatarUrl: e.target.value }))
+            }
           />
         </label>
         <label className="block text-sm">
@@ -124,14 +146,18 @@ function ProfileContent() {
           <input
             className="mt-1 w-full rounded-lg border px-3 py-2"
             value={form.languages}
-            onChange={(e) => setForm((f) => ({ ...f, languages: e.target.value }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, languages: e.target.value }))
+            }
           />
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
             checked={form.autoplay}
-            onChange={(e) => setForm((f) => ({ ...f, autoplay: e.target.checked }))}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, autoplay: e.target.checked }))
+            }
           />
           Autoplay trailers
         </label>

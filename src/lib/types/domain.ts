@@ -44,10 +44,15 @@ export type MovieSummary = {
   description?: string;
   genres?: string[];
   status?: string;
-  posterKey?: string;
+  posterKey?: string | null;
+  durationSeconds?: number | null;
+  publicationStatus?: "DRAFT" | "SCHEDULED" | "PUBLISHED";
+  mediaStatus?: string;
+  publishAt?: string | null;
 };
 
 export type WatchlistItem = {
+  posterKey?: string | null;
   movieId: string;
   title?: string;
   addedAt?: string;

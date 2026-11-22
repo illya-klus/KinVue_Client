@@ -7,7 +7,7 @@ Next.js web app for [KinVue Server](https://github.com/illya-klus/KinVue_Server)
 - **Foundation (Sprint 2):** routing shell, Gateway client, auth refresh/logout, protected/admin wrappers, shared UI states, Playwright homepage smoke (`pnpm test:e2e`)
 - **Auth UI:** register (12+ char password, 409 handling), login → movie search
 - **Social UI:** profile view/edit, user search (min 2 chars), friend requests (incoming/outgoing), friends list
-- **Movie UI:** debounced search (300 ms), detail + watchlist, watchlist page, admin create/publish/schedule
+- **Movie UI:** search (300 ms, min 2), detail + watchlist, admin create/edit/publish/schedule with catalog/index status
 - **Rooms UI:** public list, create from movie detail, room page (WS sync, chat, invite URL, playback controls gated on `room.state_sync`)
 - **Notifications:** in-app bell (`KIN-283`) with friend/room payload labels, no device-push claim
 - **Media UI:** `POST …/media-access` before HLS (`hls.js`), admin multipart upload direct to presigned MinIO URLs
@@ -30,4 +30,10 @@ Ensure Gateway and required services are up (see KinVue_Server runbooks).
 pnpm build
 ```
 
-Playwright smoke can be added under `e2e/` when CI is wired.
+Run `pnpm test:e2e` for browser checks. Sprint 3 adds eight tests for movie administration, search, watchlist, profile and social flows; these isolate the UI with HTTP fixtures. Ten existing future-stack placeholders remain skipped and do not prove those features.
+
+Sprint 3 uses `GET /api/admin/movies/:id` to load `/admin/movies/:id/edit`, PATCH to save metadata, and POST publish/schedule. A saved catalog entry may still be waiting for asynchronous search indexing. Blank optional duration/poster fields are omitted on create and cleared with null on edit. Watchlist uses the authenticated caller, and anonymous users are sent to login.
+
+The backend's `doc/runbooks/movie-sprint-3.md` describes migrations and `services/movie/test/browser-smoke.cjs`, which also verified this client against real Gateway, Movie, PostgreSQL 16 and Meilisearch with a test Auth/JWKS issuer. S3/FFmpeg playback and Rooms are later backend work. This branch depends on the Sprint 2 client PR #1.
+
+The client now follows the merged Auth cookie contract: access tokens stay in memory, refresh uses the HttpOnly cookie with credentials, and reload restores the session. Concurrent 401 responses share a refresh. The cookie-session browser test covers reload, expired access and logout; legacy browser-storage tokens are discarded.

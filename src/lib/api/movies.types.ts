@@ -4,8 +4,8 @@ export type CreateMoviePayload = {
   title: string;
   description: string;
   genres: string[];
-  durationSeconds: number;
-  posterKey: string;
+  durationSeconds?: number | null;
+  posterKey?: string | null;
 };
 
 export type SchedulePublishPayload = {

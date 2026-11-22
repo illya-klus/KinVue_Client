@@ -5,9 +5,7 @@ test("schedule a viewing, list it, and cancel it", async ({ page }) => {
   const roomId = "c3396b50-e70b-4f75-a40c-6dbab45da592";
   let schedule: Record<string, unknown> | null = null;
 
-  await page.addInitScript(() => {
-    sessionStorage.setItem("kinvue.accessToken", "test-token");
-  });
+  await page.route("http://localhost:4000/api/auth/refresh", route => route.fulfill({json:{accessToken:"test-token"}}));
   await page.route("http://localhost:4000/api/movies/movie-1", (route) =>
     route.fulfill({ json: { id: "movie-1", title: "Test movie" } }),
   );
