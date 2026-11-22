@@ -78,6 +78,7 @@ jobs:
           docker build -f services/auth/Dockerfile -t kinvue-auth-e2e .
           docker run -d --name kinvue-auth-e2e \
             --network kinvue-edge --network-alias host.docker.internal \
+            -p 4001:4001 \
             -e DATABASE_URL \
             -e GOOGLE_CLIENT_ID \
             -e JWT_REFRESH_SECRET \
