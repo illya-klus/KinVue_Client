@@ -4,6 +4,7 @@ test("solo playback requests media access and stops on navigation", async ({ pag
   const mediaUrl = "https://media.example.test/movie-1.mp4";
   const roomSockets: string[] = [];
   const mediaAccessRequests: string[] = [];
+  let mediaAccessAuthorization: string | undefined;
 
   page.on("websocket", (socket) => {
     if (new URL(socket.url()).pathname === "/rooms") {
@@ -18,7 +19,7 @@ test("solo playback requests media access and stops on navigation", async ({ pag
   );
   await page.route("http://localhost:4000/api/movies/movie-1/media-access", async (route) => {
     expect(route.request().method()).toBe("POST");
-    expect(route.request().headers().authorization).toBe("Bearer test-token");
+    mediaAccessAuthorization = route.request().headers().authorization;
     mediaAccessRequests.push(route.request().url());
     await route.fulfill({ json: { url: mediaUrl } });
   });
@@ -26,8 +27,9 @@ test("solo playback requests media access and stops on navigation", async ({ pag
 
   await page.goto("/movies/movie-1");
   await expect(page.getByRole("heading", { name: "Solo test movie" })).toBeVisible();
+  await expect.poll(() => mediaAccessRequests.length).toBeGreaterThan(0);
+  expect(mediaAccessAuthorization).toBe("Bearer test-token");
   await expect(page.locator("video")).toHaveAttribute("src", mediaUrl);
-  expect(mediaAccessRequests.length).toBeGreaterThan(0);
   expect(mediaAccessRequests).toEqual(
     Array(mediaAccessRequests.length).fill(
       "http://localhost:4000/api/movies/movie-1/media-access",
