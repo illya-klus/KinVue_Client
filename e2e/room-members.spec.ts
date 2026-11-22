@@ -5,9 +5,7 @@ const viewerId = "3f8632a5-0bb2-46e6-8c34-0efad23a4d86";
 const roomId = "b8c9dbfa-8ec0-4500-a47c-a708d4983332";
 
 test.beforeEach(async ({ page }) => {
-  await page.addInitScript(() => {
-    sessionStorage.setItem("kinvue.accessToken", "test-token");
-  });
+  await page.route("http://localhost:4000/api/auth/refresh", route => route.fulfill({json:{accessToken:"test-token"}}));
 });
 
 test("owners can invite, copy a private link, and manage member roles", async ({ page, context }) => {

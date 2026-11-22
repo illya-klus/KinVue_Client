@@ -5,9 +5,7 @@ const ownerId = "e080c5e5-440e-4140-9617-a526748669d1";
 const viewerId = "3f8632a5-0bb2-46e6-8c34-0efad23a4d86";
 
 test("public room list shows only API results and joins the selected room", async ({ page }) => {
-  await page.addInitScript(() => {
-    sessionStorage.setItem("kinvue.accessToken", "test-token");
-  });
+  await page.route("http://localhost:4000/api/auth/refresh", route => route.fulfill({json:{accessToken:"test-token"}}));
   await page.route("http://localhost:4000/api/rooms/public", (route) =>
     route.fulfill({
       json: {
