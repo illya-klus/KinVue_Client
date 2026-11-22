@@ -11,8 +11,9 @@ test("solo playback requests media access and stops on navigation", async ({ pag
       roomSockets.push(socket.url());
     }
   });
-  await page.addInitScript(() => {
-    sessionStorage.setItem("kinvue.accessToken", "test-token");
+  await page.route("http://localhost:4000/api/auth/refresh", async (route) => {
+    expect(route.request().method()).toBe("POST");
+    await route.fulfill({ json: { accessToken: "test-token" } });
   });
   await page.route("http://localhost:4000/api/movies/movie-1", (route) =>
     route.fulfill({ json: { id: "movie-1", title: "Solo test movie" } }),
