@@ -31,19 +31,14 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
-        with:
-          repository: illya-klus/KinVue_Server
-          ref: dev
-          path: KinVue_Server
+      - name: Clone KinVue_Server dev outside the client workspace
+        run: git clone --depth=1 --branch dev https://github.com/illya-klus/KinVue_Server.git "${RUNNER_TEMP}/KinVue_Server"
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: |
-            pnpm-lock.yaml
-            KinVue_Server/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install client and browser
         run: |
           pnpm install --frozen-lockfile
@@ -51,20 +46,20 @@ jobs:
       - name: Build client
         run: pnpm build
       - name: Install and build Auth
-        working-directory: KinVue_Server
+        working-directory: ${{ runner.temp }}/KinVue_Server
         run: |
           pnpm install --frozen-lockfile
           pnpm build:shared
           pnpm --filter @kinvue/auth build
       - name: Start disposable backend stack
-        working-directory: KinVue_Server
+        working-directory: ${{ runner.temp }}/KinVue_Server
         run: >-
           docker compose --env-file .env.example --profile apps up -d --build
           --wait --wait-timeout 240
           postgres movie-postgres notifications-postgres users-mongo meilisearch
           rabbitmq gateway users movie notification
       - name: Migrate Auth and start an ephemeral signing service
-        working-directory: KinVue_Server
+        working-directory: ${{ runner.temp }}/KinVue_Server
         shell: bash
         env:
           DATABASE_URL: postgresql://kinvue:kinvue@localhost:5432/kinvue
@@ -120,7 +115,7 @@ jobs:
             playwright-report/
       - name: Stop disposable stack
         if: always()
-        working-directory: KinVue_Server
+        working-directory: ${{ runner.temp }}/KinVue_Server
         run: |
           docker rm -f kinvue-auth-e2e >/dev/null 2>&1 || true
           docker compose --env-file .env.example --profile apps down --volumes --remove-orphans
