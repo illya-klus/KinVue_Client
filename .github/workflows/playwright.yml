@@ -79,7 +79,7 @@ jobs:
           docker run -d --name kinvue-auth-e2e \
             --network kinvue-edge --network-alias host.docker.internal \
             -p 4001:4001 \
-            -e DATABASE_URL \
+            -e DATABASE_URL=postgresql://kinvue:kinvue@postgres:5432/kinvue \
             -e GOOGLE_CLIENT_ID \
             -e JWT_REFRESH_SECRET \
             -e AUTH_JWT_KEY_ID \
