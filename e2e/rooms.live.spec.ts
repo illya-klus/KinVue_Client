@@ -46,6 +46,7 @@ async function registerAndSignIn(page: Page, label: string): Promise<Identity> {
 }
 
 test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/279/290)", () => {
+  test.describe.configure({ retries: 0 });
   test.skip(!liveStack, "Run with E2E_STACK=1 against the disposable live stack");
 
   test("private invitation, public discovery, member roles and playback authorization", async ({
@@ -68,7 +69,7 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
 
       await ownerPage.goto(`/movies/${movieId}`);
       await expect(ownerPage.getByRole("heading", { name: "Rooms live E2E fixture" })).toBeVisible();
-      await expect(ownerPage.getByRole("heading", { name: "Watch room" })).toBeVisible();
+      await expect(ownerPage.getByRole("heading", { name: "Watch room" })).toBeVisible({ timeout: 30_000 });
       await ownerPage.getByLabel("Private").check();
       await ownerPage.getByRole("button", { name: "Create room" }).click();
       await expect(ownerPage).toHaveURL(/\/rooms\/[0-9a-f-]+$/i, { timeout: 30_000 });
