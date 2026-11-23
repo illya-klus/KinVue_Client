@@ -93,7 +93,7 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       expect(ownerSocketUrl.searchParams.get("token")).toBe(owner.token);
 
       await ownerPage.getByRole("button", { name: "Create and copy invite link" }).click();
-      await expect(ownerPage.getByRole("status")).toContainText("Private invite link copied");
+      await expect(ownerPage.getByText("Private invite link copied.", { exact: true })).toBeVisible();
       const privateInvite = await ownerPage.evaluate(() => navigator.clipboard.readText());
       expect(privateInvite).toMatch(new RegExp(`/invite/${privateRoomId}#token=`));
       await friendPage.goto(privateInvite);
