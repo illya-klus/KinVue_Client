@@ -15,6 +15,12 @@ function tokenSubject(token: string) {
   return payload.sub!;
 }
 
+async function navigateInApp(page: Page, path: string) {
+  const expectedUrl = new URL(path, page.url()).toString();
+  await page.evaluate((url) => window.history.pushState({}, "", url), path);
+  await expect(page).toHaveURL(expectedUrl);
+}
+
 async function registerAndSignIn(page: Page, label: string): Promise<Identity> {
   const id = randomUUID().replaceAll("-", "").slice(0, 16);
   const email = `kinvue-${label}-${id}@example.test`;
@@ -67,7 +73,7 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       owner = await registerAndSignIn(ownerPage, "owner");
       const friend = await registerAndSignIn(friendPage, "friend");
 
-      await ownerPage.goto(`/movies/${movieId}`);
+      await navigateInApp(ownerPage, `/movies/${movieId}`);
       await expect(ownerPage.getByRole("heading", { name: "Rooms live E2E fixture" })).toBeVisible();
       await expect(ownerPage.getByRole("heading", { name: "Watch room" })).toBeVisible({ timeout: 30_000 });
       await ownerPage.getByLabel("Private").check();
@@ -87,7 +93,7 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       await expect(ownerPage.getByRole("status")).toContainText("Private invite link copied");
       const privateInvite = await ownerPage.evaluate(() => navigator.clipboard.readText());
       expect(privateInvite).toMatch(new RegExp(`/invite/${privateRoomId}#token=`));
-      await friendPage.goto(privateInvite);
+      await navigateInApp(friendPage, privateInvite);
       await expect(friendPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("VIEWER", { timeout: 30_000 });
       await expect(friendPage.getByText("Only the owner and controllers can change playback.")).toBeVisible();
       for (const control of ["Play", "Pause", "Seek"]) {
@@ -116,7 +122,7 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       await friendPage.getByRole("button", { name: "Play", exact: true }).click();
       await expect(ownerPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("PLAYING", { timeout: 10_000 });
 
-      await ownerPage.goto(`/movies/${movieId}`);
+      await navigateInApp(ownerPage, `/movies/${movieId}`);
       await ownerPage.getByLabel("Public").check();
       await ownerPage.getByRole("button", { name: "Create room" }).click();
       await expect(ownerPage).toHaveURL(/\/rooms\/[0-9a-f-]+$/i, { timeout: 30_000 });
@@ -124,7 +130,7 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       roomIds.push(publicRoomId);
       await expect(ownerPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("OWNER", { timeout: 30_000 });
 
-      await friendPage.goto("/rooms");
+      await navigateInApp(friendPage, "/rooms");
       await expect(friendPage.getByRole("heading", { name: "Public rooms" })).toBeVisible();
       const roomRow = friendPage.locator("li").filter({ hasText: publicRoomId });
       await expect(roomRow).toBeVisible({ timeout: 30_000 });
