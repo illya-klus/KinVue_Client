@@ -17,7 +17,10 @@ function tokenSubject(token: string) {
 
 async function navigateInApp(page: Page, path: string) {
   const expectedUrl = new URL(path, page.url()).toString();
-  await page.evaluate((url) => window.history.pushState({}, "", url), path);
+  await page.evaluate((url) => {
+    window.history.pushState({}, "", url);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, path);
   await expect(page).toHaveURL(expectedUrl);
 }
 
