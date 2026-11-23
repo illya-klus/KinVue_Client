@@ -31,13 +31,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Check out KinVue_Server dev
-        uses: actions/checkout@v4
-        with:
-          repository: illya-klus/KinVue_Server
-          ref: dev
-          path: ../../_temp/KinVue_Server
-          persist-credentials: false
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
@@ -50,21 +43,28 @@ jobs:
           pnpm exec playwright install chromium --with-deps
       - name: Build client
         run: pnpm build
+      - name: Check out KinVue_Server dev
+        uses: actions/checkout@v4
+        with:
+          repository: illya-klus/KinVue_Server
+          ref: dev
+          path: KinVue_Server
+          persist-credentials: false
       - name: Install and build Auth
-        working-directory: ${{ runner.temp }}/KinVue_Server
+        working-directory: ${{ github.workspace }}/KinVue_Server
         run: |
           pnpm install --frozen-lockfile
           pnpm build:shared
           pnpm --filter @kinvue/auth build
       - name: Start disposable backend stack
-        working-directory: ${{ runner.temp }}/KinVue_Server
+        working-directory: ${{ github.workspace }}/KinVue_Server
         run: >-
           docker compose --env-file .env.example --profile apps up -d --build
           --wait --wait-timeout 240
           postgres movie-postgres notifications-postgres rooms-postgres users-mongo
           meilisearch rooms-redis rabbitmq gateway users movie notification rooms
       - name: Migrate Auth and start an ephemeral signing service
-        working-directory: ${{ runner.temp }}/KinVue_Server
+        working-directory: ${{ github.workspace }}/KinVue_Server
         shell: bash
         env:
           DATABASE_URL: postgresql://kinvue:kinvue@localhost:5432/kinvue
@@ -107,7 +107,7 @@ jobs:
             exit 1
           fi
       - name: Migrate Movie and seed a published room fixture
-        working-directory: ${{ runner.temp }}/KinVue_Server
+        working-directory: ${{ github.workspace }}/KinVue_Server
         env:
           MOVIE_DATABASE_URL: postgresql://kinvue_movie:kinvue_movie@localhost:5434/kinvue_movie
         run: |
@@ -142,13 +142,13 @@ jobs:
             playwright-report/
       - name: Capture backend logs on failure
         if: failure()
-        working-directory: ${{ runner.temp }}/KinVue_Server
+        working-directory: ${{ github.workspace }}/KinVue_Server
         run: |
           docker logs --tail=100 kinvue-auth-e2e || true
           docker compose --env-file .env.example --profile apps logs --no-color --tail=100 gateway users rooms movie
       - name: Stop disposable stack
         if: always()
-        working-directory: ${{ runner.temp }}/KinVue_Server
+        working-directory: ${{ github.workspace }}/KinVue_Server
         run: |
           docker rm -f kinvue-auth-e2e >/dev/null 2>&1 || true
           docker compose --env-file .env.example --profile apps down --volumes --remove-orphans
