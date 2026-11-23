@@ -110,12 +110,16 @@ jobs:
         working-directory: ${{ github.workspace }}/KinVue_Server
         env:
           MOVIE_DATABASE_URL: postgresql://kinvue_movie:kinvue_movie@localhost:5434/kinvue_movie
+          MEILISEARCH_HOST: http://localhost:7700
+          MEILISEARCH_MASTER_KEY: dev-master-key-change-me
         run: |
           set -euo pipefail
+          cp .env.example .env
           pnpm --filter @kinvue/movie migrate:deploy
           docker compose --env-file .env.example exec -T movie-postgres \
             psql -U kinvue_movie -d kinvue_movie -v ON_ERROR_STOP=1 -c \
             "INSERT INTO movies (movie_id,title,description,genres,created_by_user_id,publication_status,media_status,hls_master_key,updated_at) VALUES ('aeb60a91-940b-41c9-a011-5b88ea76b387','Rooms live E2E fixture','Disposable movie used by KinVue browser acceptance tests.','[]','e8bbdc28-54bb-4b69-96e8-8e602441e44a','PUBLISHED','READY','e2e/master.m3u8',NOW()) ON CONFLICT (movie_id) DO UPDATE SET publication_status='PUBLISHED',media_status='READY',updated_at=NOW()"
+          pnpm --filter @kinvue/movie search:rebuild
       - name: Wait for Gateway and Rooms readiness
         run: |
           set -euo pipefail
