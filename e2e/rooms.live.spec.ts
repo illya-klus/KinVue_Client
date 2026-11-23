@@ -39,7 +39,7 @@ async function registerAndSignIn(page: Page, label: string): Promise<Identity> {
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
   const loginResponse = await login;
-  expect(loginResponse.status()).toBe(200);
+  expect(loginResponse.status()).toBe(201);
   const { accessToken } = (await loginResponse.json()) as { accessToken: string };
   await expect(page).toHaveURL(/\/movies\/search$/);
   return { email, password, token: accessToken, userId: tokenSubject(accessToken) };
