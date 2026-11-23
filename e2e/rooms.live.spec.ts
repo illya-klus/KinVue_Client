@@ -183,4 +183,40 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       await outsiderContext.close();
     }
   });
+
+  test("solo playback requests signed media access without opening a room socket", async ({
+    browser,
+  }) => {
+    test.setTimeout(120_000);
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const roomSockets: string[] = [];
+    page.on("websocket", (socket) => {
+      if (new URL(socket.url()).pathname === "/rooms") roomSockets.push(socket.url());
+    });
+
+    try {
+      await registerAndSignIn(page, "solo");
+      const mediaAccess = page.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/api/movies/${movieId}/media-access`) &&
+          response.request().method() === "POST",
+      );
+      await openMovieFixture(page);
+      const response = await mediaAccess;
+      expect(response.status()).toBe(200);
+
+      const access = (await response.json()) as {
+        url: string;
+        expiresAt: string;
+      };
+      const signedUrl = new URL(access.url);
+      expect(signedUrl.pathname).toContain("/kinvue-media/e2e/master.m3u8");
+      expect(signedUrl.searchParams.get("X-Amz-Expires")).toBe("600");
+      expect(Date.parse(access.expiresAt)).toBeGreaterThan(Date.now());
+      expect(roomSockets).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  });
 });
