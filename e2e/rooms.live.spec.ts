@@ -1,0 +1,149 @@
+import { randomUUID } from "node:crypto";
+import { expect, test, type Page } from "@playwright/test";
+
+const liveStack = process.env.E2E_STACK === "1";
+const movieId = "aeb60a91-940b-41c9-a011-5b88ea76b387";
+const api = "http://localhost:4000/api";
+
+type Identity = { email: string; password: string; userId: string; token: string };
+
+function tokenSubject(token: string) {
+  const payload = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()) as {
+    sub?: string;
+  };
+  expect(payload.sub).toMatch(/^[0-9a-f-]{36}$/i);
+  return payload.sub!;
+}
+
+async function registerAndSignIn(page: Page, label: string): Promise<Identity> {
+  const id = randomUUID().replaceAll("-", "").slice(0, 16);
+  const email = `kinvue-${label}-${id}@example.test`;
+  const password = `E2e-password-${id}-!`;
+  await page.goto("/register");
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Username").fill(`e2e_${id}`);
+  await page.getByLabel("Display name").fill(`E2E ${label}`);
+  await page.getByLabel("Password (min 12)").fill(password);
+  await page.getByLabel("Confirm password").fill(password);
+  const registration = page.waitForResponse(
+    (response) => response.url().endsWith("/api/auth/register") && response.request().method() === "POST",
+  );
+  await page.getByRole("button", { name: "Register" }).click();
+  expect((await registration).status()).toBe(201);
+  await expect(page).toHaveURL(/\/login$/);
+
+  const login = page.waitForResponse(
+    (response) => response.url().endsWith("/api/auth/login") && response.request().method() === "POST",
+  );
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  const loginResponse = await login;
+  expect(loginResponse.status()).toBe(200);
+  const { accessToken } = (await loginResponse.json()) as { accessToken: string };
+  await expect(page).toHaveURL(/\/movies\/search$/);
+  return { email, password, token: accessToken, userId: tokenSubject(accessToken) };
+}
+
+test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/279/290)", () => {
+  test.skip(!liveStack, "Run with E2E_STACK=1 against the disposable live stack");
+
+  test("private invitation, public discovery, member roles and playback authorization", async ({
+    browser,
+  }) => {
+    test.setTimeout(180_000);
+    const ownerContext = await browser.newContext();
+    const friendContext = await browser.newContext();
+    await ownerContext.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const ownerPage = await ownerContext.newPage();
+    const friendPage = await friendContext.newPage();
+    const ownerSockets: string[] = [];
+    ownerPage.on("websocket", (socket) => ownerSockets.push(socket.url()));
+
+    let owner: Identity | undefined;
+    const roomIds: string[] = [];
+    try {
+      owner = await registerAndSignIn(ownerPage, "owner");
+      const friend = await registerAndSignIn(friendPage, "friend");
+
+      await ownerPage.goto(`/movies/${movieId}`);
+      await expect(ownerPage.getByRole("heading", { name: "Rooms live E2E fixture" })).toBeVisible();
+      await expect(ownerPage.getByRole("heading", { name: "Watch room" })).toBeVisible();
+      await ownerPage.getByLabel("Private").check();
+      await ownerPage.getByRole("button", { name: "Create room" }).click();
+      await expect(ownerPage).toHaveURL(/\/rooms\/[0-9a-f-]+$/i, { timeout: 30_000 });
+      const privateRoomId = new URL(ownerPage.url()).pathname.split("/").at(-1)!;
+      roomIds.push(privateRoomId);
+      await expect(ownerPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("OWNER", { timeout: 30_000 });
+
+      const privateSocket = await expect.poll(() => ownerSockets.find((url) => new URL(url).searchParams.get("roomId") === privateRoomId)).toBeTruthy();
+      void privateSocket;
+      const ownerSocketUrl = new URL(ownerSockets.find((url) => new URL(url).searchParams.get("roomId") === privateRoomId)!);
+      expect(ownerSocketUrl.pathname).toBe("/rooms");
+      expect(ownerSocketUrl.searchParams.get("token")).toBe(owner.token);
+
+      await ownerPage.getByRole("button", { name: "Create and copy invite link" }).click();
+      await expect(ownerPage.getByRole("status")).toContainText("Private invite link copied");
+      const privateInvite = await ownerPage.evaluate(() => navigator.clipboard.readText());
+      expect(privateInvite).toMatch(new RegExp(`/invite/${privateRoomId}#token=`));
+      await friendPage.goto(privateInvite);
+      await expect(friendPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("VIEWER", { timeout: 30_000 });
+      await expect(friendPage.getByText("Only the owner and controllers can change playback.")).toBeVisible();
+      for (const control of ["Play", "Pause", "Seek"]) {
+        await expect(friendPage.getByRole("button", { name: control, exact: true })).toBeDisabled();
+      }
+
+      // Try the forbidden command over a second, real authenticated socket. Rooms must
+      // reject it server-side and keep the shared playback version unchanged.
+      const rejection = friendPage.evaluate(({ id, token }) => new Promise<string>((resolve, reject) => {
+        const socket = new WebSocket(`ws://localhost:4014/rooms?roomId=${id}&token=${encodeURIComponent(token)}`);
+        const timeout = window.setTimeout(() => { socket.close(); reject(new Error("Unauthorized playback command timed out")); }, 10_000);
+        socket.addEventListener("message", (event) => {
+          const message = JSON.parse(String(event.data)) as { type?: string };
+          if (message.type === "room.state_sync") socket.send(JSON.stringify({ type: "room.play", roomId: id, eventId: crypto.randomUUID(), positionSeconds: 0 }));
+          if (message.type === "room.error") { window.clearTimeout(timeout); socket.close(); resolve(message.type); }
+        });
+        socket.addEventListener("error", () => { window.clearTimeout(timeout); reject(new Error("Unauthorized socket could not be opened")); });
+      }), { id: privateRoomId, token: friend.token });
+      await expect(rejection).resolves.toBe("room.error");
+      await expect(ownerPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("version 0");
+
+      await expect(ownerPage.getByLabel(`Role for ${friend.userId}`)).toHaveValue("VIEWER", { timeout: 30_000 });
+      await ownerPage.getByLabel(`Role for ${friend.userId}`).selectOption("CONTROLLER");
+      await expect(friendPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("CONTROLLER", { timeout: 30_000 });
+      await expect(friendPage.getByRole("button", { name: "Play", exact: true })).toBeEnabled();
+      await friendPage.getByRole("button", { name: "Play", exact: true }).click();
+      await expect(ownerPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("PLAYING", { timeout: 10_000 });
+
+      await ownerPage.goto(`/movies/${movieId}`);
+      await ownerPage.getByLabel("Public").check();
+      await ownerPage.getByRole("button", { name: "Create room" }).click();
+      await expect(ownerPage).toHaveURL(/\/rooms\/[0-9a-f-]+$/i, { timeout: 30_000 });
+      const publicRoomId = new URL(ownerPage.url()).pathname.split("/").at(-1)!;
+      roomIds.push(publicRoomId);
+      await expect(ownerPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("OWNER", { timeout: 30_000 });
+
+      await friendPage.goto("/rooms");
+      await expect(friendPage.getByRole("heading", { name: "Public rooms" })).toBeVisible();
+      const roomRow = friendPage.locator("li").filter({ hasText: publicRoomId });
+      await expect(roomRow).toBeVisible({ timeout: 30_000 });
+      await roomRow.getByRole("link", { name: "Join" }).click();
+      await expect(friendPage).toHaveURL(new RegExp(`/rooms/${publicRoomId}$`));
+      await expect(friendPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("VIEWER", { timeout: 30_000 });
+      for (const control of ["Play", "Pause", "Seek"]) {
+        await expect(friendPage.getByRole("button", { name: control, exact: true })).toBeDisabled();
+      }
+    } finally {
+      if (owner) {
+        for (const roomId of roomIds) {
+          const response = await ownerPage.request.delete(`${api}/rooms/${roomId}`, {
+            headers: { authorization: `Bearer ${owner.token}` },
+          });
+          expect(response.ok(), `room cleanup for ${roomId} failed: ${response.status()}`).toBe(true);
+        }
+      }
+      await ownerContext.close();
+      await friendContext.close();
+    }
+  });
+});
