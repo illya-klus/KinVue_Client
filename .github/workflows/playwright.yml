@@ -114,6 +114,12 @@ jobs:
           path: |
             test-results/
             playwright-report/
+      - name: Capture backend logs on failure
+        if: failure()
+        working-directory: ${{ runner.temp }}/KinVue_Server
+        run: |
+          docker logs --tail=100 kinvue-auth-e2e || true
+          docker compose --env-file .env.example --profile apps logs --no-color --tail=100 gateway users
       - name: Stop disposable stack
         if: always()
         working-directory: ${{ runner.temp }}/KinVue_Server
