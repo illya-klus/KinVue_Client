@@ -26,3 +26,103 @@ jobs:
           path: |
             test-results/
             playwright-report/
+
+  live-auth:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clone KinVue_Server dev outside the client workspace
+        run: git clone --depth=1 --branch dev https://github.com/illya-klus/KinVue_Server.git "${RUNNER_TEMP}/KinVue_Server"
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install client and browser
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install chromium --with-deps
+      - name: Build client
+        run: pnpm build
+      - name: Install and build Auth
+        working-directory: ${{ runner.temp }}/KinVue_Server
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build:shared
+          pnpm --filter @kinvue/auth build
+      - name: Start disposable backend stack
+        working-directory: ${{ runner.temp }}/KinVue_Server
+        run: >-
+          docker compose --env-file .env.example --profile apps up -d --build
+          --wait --wait-timeout 240
+          postgres movie-postgres notifications-postgres users-mongo meilisearch
+          rabbitmq gateway users movie notification
+      - name: Migrate Auth and start an ephemeral signing service
+        working-directory: ${{ runner.temp }}/KinVue_Server
+        shell: bash
+        env:
+          DATABASE_URL: postgresql://kinvue:kinvue@localhost:5432/kinvue
+          AUTH_DATABASE_URL: postgresql://kinvue:kinvue@localhost:5432/kinvue
+          GOOGLE_CLIENT_ID: e2e.example.invalid
+          JWT_REFRESH_SECRET: disposable-e2e-refresh-secret
+          AUTH_JWT_KEY_ID: disposable-e2e
+          AUTH_HTTP_PORT: "4001"
+          AUTH_HTTP_HOST: 0.0.0.0
+          AUTH_GRPC_URL: 0.0.0.0:50051
+          USERS_INTERNAL_URL: http://users:4002
+        run: |
+          set -euo pipefail
+          pnpm --filter @kinvue/auth migrate:deploy
+          private_key="$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null)"
+          docker build -f services/auth/Dockerfile -t kinvue-auth-e2e .
+          docker run -d --name kinvue-auth-e2e \
+            --network kinvue-edge --network-alias host.docker.internal \
+            -p 4001:4001 \
+            -e DATABASE_URL=postgresql://kinvue:kinvue@postgres:5432/kinvue \
+            -e GOOGLE_CLIENT_ID \
+            -e JWT_REFRESH_SECRET \
+            -e AUTH_JWT_KEY_ID \
+            -e AUTH_HTTP_PORT \
+            -e AUTH_HTTP_HOST \
+            -e AUTH_GRPC_URL \
+            -e USERS_INTERNAL_URL \
+            -e "AUTH_JWT_PRIVATE_KEY=${private_key}" \
+            kinvue-auth-e2e
+          ready=0
+          for attempt in {1..45}; do
+            if curl --fail --silent http://127.0.0.1:4001/health/ready >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$ready" != "1" ]]; then
+            docker logs kinvue-auth-e2e
+            exit 1
+          fi
+      - name: Run live registration and login journeys
+        env:
+          E2E_STACK: "1"
+        run: >-
+          pnpm test:e2e:full --
+          e2e/registration.live.spec.ts e2e/login.live.spec.ts
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: live-playwright-traces
+          path: |
+            test-results/
+            playwright-report/
+      - name: Capture backend logs on failure
+        if: failure()
+        working-directory: ${{ runner.temp }}/KinVue_Server
+        run: |
+          docker logs --tail=100 kinvue-auth-e2e || true
+          docker compose --env-file .env.example --profile apps logs --no-color --tail=100 gateway users
+      - name: Stop disposable stack
+        if: always()
+        working-directory: ${{ runner.temp }}/KinVue_Server
+        run: |
+          docker rm -f kinvue-auth-e2e >/dev/null 2>&1 || true
+          docker compose --env-file .env.example --profile apps down --volumes --remove-orphans

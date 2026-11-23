@@ -4,8 +4,6 @@ import { test, expect } from "@playwright/test";
  * Phase 29 journey placeholders — expand when full stack is wired in CI.
  */
 const journeys = [
-  "register user",
-  "login user",
   "edit profile",
   "user search",
   "friend request and accept",
