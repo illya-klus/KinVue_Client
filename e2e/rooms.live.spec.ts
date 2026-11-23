@@ -65,9 +65,11 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
     test.setTimeout(180_000);
     const ownerContext = await browser.newContext();
     const friendContext = await browser.newContext();
+    const outsiderContext = await browser.newContext();
     await ownerContext.grantPermissions(["clipboard-read", "clipboard-write"]);
     const ownerPage = await ownerContext.newPage();
     const friendPage = await friendContext.newPage();
+    const outsiderPage = await outsiderContext.newPage();
     const ownerSockets: string[] = [];
     ownerPage.on("websocket", (socket) => ownerSockets.push(socket.url()));
 
@@ -76,6 +78,7 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
     try {
       owner = await registerAndSignIn(ownerPage, "owner");
       const friend = await registerAndSignIn(friendPage, "friend");
+      const outsider = await registerAndSignIn(outsiderPage, "outsider");
 
       await openMovieFixture(ownerPage);
       await expect(ownerPage.getByRole("heading", { name: "Watch room" })).toBeVisible({ timeout: 30_000 });
@@ -96,6 +99,13 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       await expect(ownerPage.getByText("Private invite link copied.", { exact: true })).toBeVisible();
       const privateInvite = await ownerPage.evaluate(() => navigator.clipboard.readText());
       expect(privateInvite).toMatch(new RegExp(`/invite/${privateRoomId}#token=`));
+
+      const outsiderJoin = await outsiderPage.request.post(`${api}/rooms/${privateRoomId}/invites/accept`, {
+        headers: { authorization: `Bearer ${outsider.token}` },
+        data: { token: "invalid-invite-token" },
+      });
+      expect(outsiderJoin.status()).toBe(403);
+
       await friendPage.goto(privateInvite);
       await expect(friendPage).toHaveURL((url) =>
         url.pathname === `/rooms/${privateRoomId}` || url.pathname === "/login",
@@ -170,6 +180,7 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       }
       await ownerContext.close();
       await friendContext.close();
+      await outsiderContext.close();
     }
   });
 });
