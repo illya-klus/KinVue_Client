@@ -6,6 +6,7 @@ const movieId = "aeb60a91-940b-41c9-a011-5b88ea76b387";
 const api = "http://localhost:4000/api";
 
 type Identity = { email: string; password: string; userId: string; token: string };
+let soloPlaybackIdentity: Pick<Identity, "email" | "password"> | undefined;
 
 function tokenSubject(token: string) {
   const payload = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()) as {
@@ -56,7 +57,7 @@ async function registerAndSignIn(page: Page, label: string): Promise<Identity> {
 }
 
 test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/279/290)", () => {
-  test.describe.configure({ retries: 0 });
+  test.describe.configure({ mode: "serial", retries: 0 });
   test.skip(!liveStack, "Run with E2E_STACK=1 against the disposable live stack");
 
   test("private invitation, public discovery, member roles and playback authorization", async ({
@@ -77,6 +78,10 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
     const roomIds: string[] = [];
     try {
       owner = await registerAndSignIn(ownerPage, "owner");
+      // Reuse this account in the following solo-playback test. Gateway deliberately
+      // limits registration to three requests per minute, and this journey already
+      // creates the owner, friend, and outsider accounts.
+      soloPlaybackIdentity = { email: owner.email, password: owner.password };
       const friend = await registerAndSignIn(friendPage, "friend");
       const outsider = await registerAndSignIn(outsiderPage, "outsider");
 
@@ -196,7 +201,16 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
     });
 
     try {
-      await registerAndSignIn(page, "solo");
+      expect(soloPlaybackIdentity, "the preceding room journey must create the solo test account").toBeDefined();
+      await page.goto("/login");
+      await page.getByLabel("Email").fill(soloPlaybackIdentity!.email);
+      await page.getByLabel("Password").fill(soloPlaybackIdentity!.password);
+      const login = page.waitForResponse(
+        (response) => response.url().endsWith("/api/auth/login") && response.request().method() === "POST",
+      );
+      await page.getByRole("button", { name: "Sign in" }).click();
+      expect((await login).status()).toBe(201);
+      await expect(page).toHaveURL(/\/movies\/search$/);
       const mediaAccess = page.waitForResponse(
         (response) =>
           response.url().endsWith(`/api/movies/${movieId}/media-access`) &&
