@@ -161,7 +161,7 @@ test.describe("Sprint 6 disposable full-stack acceptance", () => {
       const friend = await register(friendPage, "friend");
       grantFixtureAdmin(owner.userId);
       await ownerPage.getByRole("button", { name: "Log out" }).click();
-      await expect(ownerPage).toHaveURL(/\/login$/);
+      await expect(ownerPage.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
       owner = await signIn(ownerPage, owner);
       const ownerName = `Updated ${owner.username}`;
       await test.step("KIN-253: profile changes survive reload", async () => {

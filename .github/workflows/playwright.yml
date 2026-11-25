@@ -198,7 +198,7 @@ jobs:
         working-directory: ${{ github.workspace }}/KinVue_Server
         run: |
           docker logs --tail=100 kinvue-auth-e2e || true
-          docker compose --env-file .env.example --profile apps logs --no-color --tail=100 gateway users rooms movie
+          docker compose --env-file .env.example --profile apps logs --no-color --tail=100 gateway users rooms movie transcode-worker
       - name: Stop disposable stack
         if: always()
         working-directory: ${{ github.workspace }}/KinVue_Server
