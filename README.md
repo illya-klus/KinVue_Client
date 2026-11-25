@@ -30,7 +30,9 @@ Ensure Gateway and required services are up (see KinVue_Server runbooks).
 pnpm build
 ```
 
-Run `pnpm test:e2e` for browser checks. Sprint 3 adds eight tests for movie administration, search, watchlist, profile and social flows; these isolate the UI with HTTP fixtures. Ten existing future-stack placeholders remain skipped and do not prove those features.
+Run `pnpm test:e2e` for browser checks. Sprint 3 adds eight tests for movie administration, search, watchlist, profile and social flows; these isolate the UI with HTTP fixtures. Seven future-stack placeholders remain skipped and do not prove those features. Two live Auth journeys run in the dedicated disposable-stack CI job.
+
+`pnpm test:e2e:full` sets `E2E_STACK=1` and runs the same Playwright suite against a running local stack. For disposable live Auth coverage, the `live-auth` GitHub Actions job starts KinVue_Server `dev`, creates a one-run signing key and database, then runs `e2e/registration.live.spec.ts` and `e2e/login.live.spec.ts` through Gateway. Its Compose volumes are removed at job end; no GitHub secrets or paid services are used.
 
 Sprint 3 uses `GET /api/admin/movies/:id` to load `/admin/movies/:id/edit`, PATCH to save metadata, and POST publish/schedule. A saved catalog entry may still be waiting for asynchronous search indexing. Blank optional duration/poster fields are omitted on create and cleared with null on edit. Watchlist uses the authenticated caller, and anonymous users are sent to login.
 

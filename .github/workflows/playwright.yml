@@ -26,3 +26,135 @@ jobs:
           path: |
             test-results/
             playwright-report/
+
+  live-auth:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - name: Install client and browser
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install chromium --with-deps
+      - name: Build client
+        run: pnpm build
+      - name: Check out KinVue_Server dev
+        uses: actions/checkout@v4
+        with:
+          repository: illya-klus/KinVue_Server
+          ref: dev
+          path: KinVue_Server
+          persist-credentials: false
+      - name: Install and build Auth
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build:shared
+          pnpm --filter @kinvue/auth build
+      - name: Start disposable backend stack
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        run: >-
+          docker compose --env-file .env.example --profile apps up -d --build
+          --wait --wait-timeout 240
+          postgres movie-postgres notifications-postgres rooms-postgres users-mongo
+          meilisearch rooms-redis rabbitmq gateway users movie notification rooms
+      - name: Migrate Auth and start an ephemeral signing service
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        shell: bash
+        env:
+          DATABASE_URL: postgresql://kinvue:kinvue@localhost:5432/kinvue
+          AUTH_DATABASE_URL: postgresql://kinvue:kinvue@localhost:5432/kinvue
+          GOOGLE_CLIENT_ID: e2e.example.invalid
+          JWT_REFRESH_SECRET: disposable-e2e-refresh-secret
+          AUTH_JWT_KEY_ID: disposable-e2e
+          AUTH_HTTP_PORT: "4001"
+          AUTH_HTTP_HOST: 0.0.0.0
+          AUTH_GRPC_URL: 0.0.0.0:50051
+          USERS_INTERNAL_URL: http://users:4002
+        run: |
+          set -euo pipefail
+          pnpm --filter @kinvue/auth migrate:deploy
+          private_key="$(openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null)"
+          docker build -f services/auth/Dockerfile -t kinvue-auth-e2e .
+          docker run -d --name kinvue-auth-e2e \
+            --network kinvue-edge --network-alias host.docker.internal \
+            -p 4001:4001 \
+            -e DATABASE_URL=postgresql://kinvue:kinvue@postgres:5432/kinvue \
+            -e GOOGLE_CLIENT_ID \
+            -e JWT_REFRESH_SECRET \
+            -e AUTH_JWT_KEY_ID \
+            -e AUTH_HTTP_PORT \
+            -e AUTH_HTTP_HOST \
+            -e AUTH_GRPC_URL \
+            -e USERS_INTERNAL_URL \
+            -e "AUTH_JWT_PRIVATE_KEY=${private_key}" \
+            kinvue-auth-e2e
+          ready=0
+          for attempt in {1..45}; do
+            if curl --fail --silent http://127.0.0.1:4001/health/ready >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [[ "$ready" != "1" ]]; then
+            docker logs kinvue-auth-e2e
+            exit 1
+          fi
+      - name: Migrate Movie and seed a published room fixture
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        env:
+          MOVIE_DATABASE_URL: postgresql://kinvue_movie:kinvue_movie@localhost:5434/kinvue_movie
+          MEILISEARCH_HOST: http://localhost:7700
+          MEILISEARCH_MASTER_KEY: dev-master-key-change-me
+          S3_ENDPOINT: http://localhost:9000
+          S3_ACCESS_KEY: kinvue
+          S3_SECRET_KEY: kinvue-secret
+          S3_BUCKET: kinvue-media
+        run: |
+          set -euo pipefail
+          cp .env.example .env
+          pnpm --filter @kinvue/movie migrate:deploy
+          docker compose --env-file .env.example exec -T movie-postgres \
+            psql -U kinvue_movie -d kinvue_movie -v ON_ERROR_STOP=1 -c \
+            "INSERT INTO movies (movie_id,title,description,genres,created_by_user_id,publication_status,media_status,hls_master_key,updated_at) VALUES ('aeb60a91-940b-41c9-a011-5b88ea76b387','Rooms live E2E fixture','Disposable movie used by KinVue browser acceptance tests.','[]','e8bbdc28-54bb-4b69-96e8-8e602441e44a','PUBLISHED','READY','e2e/master.m3u8',NOW()) ON CONFLICT (movie_id) DO UPDATE SET publication_status='PUBLISHED',media_status='READY',updated_at=NOW()"
+          pnpm --filter @kinvue/movie search:rebuild
+      - name: Wait for Gateway and Rooms readiness
+        run: |
+          set -euo pipefail
+          for url in http://127.0.0.1:4000/health/ready http://127.0.0.1:4004/health/ready; do
+            ready=0
+            for attempt in {1..45}; do
+              if curl --fail --silent "$url" >/dev/null; then ready=1; break; fi
+              sleep 2
+            done
+            if [[ "$ready" != "1" ]]; then curl --fail "$url"; exit 1; fi
+          done
+      - name: Run live Rooms browser journey
+        env:
+          E2E_STACK: "1"
+        run: pnpm exec playwright test e2e/rooms.live.spec.ts --workers=1
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: live-playwright-traces
+          path: |
+            test-results/
+            playwright-report/
+      - name: Capture backend logs on failure
+        if: failure()
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        run: |
+          docker logs --tail=100 kinvue-auth-e2e || true
+          docker compose --env-file .env.example --profile apps logs --no-color --tail=100 gateway users rooms movie
+      - name: Stop disposable stack
+        if: always()
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        run: |
+          docker rm -f kinvue-auth-e2e >/dev/null 2>&1 || true
+          docker compose --env-file .env.example --profile apps down --volumes --remove-orphans

@@ -8,7 +8,8 @@
     "build": "next build --turbopack",
     "start": "next start",
     "lint": "eslint",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:full": "node scripts/run-e2e-full.mjs"
   },
   "dependencies": {
     "hls.js": "^1.6.15",
