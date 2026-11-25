@@ -25,6 +25,12 @@ export function HlsPlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [accessRevision, setAccessRevision] = useState(0);
+  const resumeRef = useRef<{
+    movieId: string;
+    position: number;
+    playing: boolean;
+  } | null>(null);
   const [needsGesture, setNeedsGesture] = useState(false);
   const playbackRef = useRef(roomPlayback);
   playbackRef.current = roomPlayback;
@@ -63,7 +69,9 @@ export function HlsPlayer({
   ]);
 
   useEffect(() => {
+    const video = videoRef.current;
     let destroyed = false;
+    let renewal: ReturnType<typeof setTimeout> | undefined;
     let destroyHls: (() => void) | undefined;
     void (async () => {
       setLoading(true);
@@ -74,10 +82,33 @@ export function HlsPlayer({
         if (!el || destroyed) {
           return;
         }
+        if (access.expiresAt) {
+          const delay = Date.parse(access.expiresAt) - Date.now() - 30_000;
+          if (delay <= 0 || !Number.isFinite(delay))
+            throw new Error("Media access has expired. Reopen the player.");
+          renewal = setTimeout(
+            () => setAccessRevision((value) => value + 1),
+            delay,
+          );
+        }
         if (access.url.includes(".m3u8")) {
           const { default: Hls } = await import("hls.js");
+          if (destroyed) return;
           if (Hls.isSupported()) {
             const hls = new Hls();
+            hls.on(Hls.Events.ERROR, (_event, data) => {
+              if (data.fatal && !destroyed) {
+                clearTimeout(renewal);
+                hls.destroy();
+                destroyHls = undefined;
+                el.pause();
+                el.removeAttribute("src");
+                el.load();
+                setError(
+                  "Playback failed. Reopen the player to renew media access.",
+                );
+              }
+            });
             hls.loadSource(access.url);
             hls.attachMedia(el);
             destroyHls = () => hls.destroy();
@@ -97,9 +128,21 @@ export function HlsPlayer({
     })();
     return () => {
       destroyed = true;
+      clearTimeout(renewal);
+      if (video)
+        resumeRef.current = {
+          movieId,
+          position: video.currentTime,
+          playing: !video.paused,
+        };
       destroyHls?.();
+      if (video) {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      }
     };
-  }, [movieId]);
+  }, [movieId, accessRevision]);
 
   if (error) {
     return <StatusMessage tone="error" title="Playback" detail={error} />;
@@ -113,7 +156,17 @@ export function HlsPlayer({
       <video
         ref={videoRef}
         controls={!roomPlayback}
-        onLoadedMetadata={applyRoomPlayback}
+        onLoadedMetadata={() => {
+          if (roomPlayback) applyRoomPlayback();
+          else if (resumeRef.current?.movieId === movieId) {
+            const video = videoRef.current;
+            if (video) {
+              video.currentTime = resumeRef.current.position;
+              if (resumeRef.current.playing)
+                void video.play().catch(() => undefined);
+            }
+          }
+        }}
         className="w-full rounded-lg bg-black"
         playsInline
       />
