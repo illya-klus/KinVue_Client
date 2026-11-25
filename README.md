@@ -49,3 +49,7 @@ Four Playwright realtime cases complement the existing room/member tests. The ba
 ### Sprint 5 media
 
 Multipart parts go directly to private storage. Successful ETags stay in memory for this page; retry renews URLs for unfinished parts within the 24-hour upload session. No synthetic ETags are accepted. HLS requests media-access first and renews before expiry; leaving destroys the player and cancels renewal. Room roles and authoritative playback remain enforced. Run `pnpm exec playwright test e2e/media-sprint-5.spec.ts e2e/solo-playback.spec.ts e2e/rooms-realtime.spec.ts`. Storage must allow the web origin and expose ETag.
+
+### Sprint 6 full-stack acceptance
+
+`E2E_SPRINT6=1 pnpm exec playwright test e2e/sprint-6.live.spec.ts --workers=1` runs real profile/friendship/catalog/upload/HLS/realtime/recovery journeys. It needs the explicitly disposable paired backend, its test database/storage URLs and a generated video over 8 MiB. CI generates the video only in the worker container. Setup grants admin via the existing CLI; product actions use Gateway/public Rooms WS; teardown removes only collected fixture UUIDs and closes rooms. See the Server `doc/runbooks/sprint-6-acceptance.md`. On this PR branch CI uses the paired Server branch; main continues to test dev.
