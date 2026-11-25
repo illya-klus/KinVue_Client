@@ -159,6 +159,18 @@ jobs:
             -x264-params nal-hrd=cbr:force-cfr=1 -pix_fmt yuv420p \
             -c:a aac -movflags +faststart /fixtures/source.mp4
           test "$(stat -c%s "$GITHUB_WORKSPACE/.e2e-fixtures/source.mp4")" -gt 8388608
+      - name: Isolate Gateway rate windows between independent live suites
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file .env.example --profile apps restart gateway
+          ready=0
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4000/health/ready >/dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          test "$ready" = "1"
       - name: Run Sprint 6 real media and recovery acceptance
         env:
           E2E_SPRINT6: "1"

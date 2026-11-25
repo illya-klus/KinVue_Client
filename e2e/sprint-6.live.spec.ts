@@ -18,6 +18,7 @@ type Identity = {
 };
 type Frame = { type: string; version?: number; [key: string]: unknown };
 test.describe("Sprint 6 disposable full-stack acceptance", () => {
+  test.describe.configure({ retries: 0 });
   test.skip(
     process.env.E2E_SPRINT6 !== "1",
     "Requires the isolated Sprint 6 backend and generated media fixture",
@@ -26,6 +27,10 @@ test.describe("Sprint 6 disposable full-stack acceptance", () => {
     browser,
   }) => {
     test.setTimeout(600_000);
+    expect(
+      process.env.E2E_DISPOSABLE_STACK,
+      "Live faults require an explicitly disposable stack",
+    ).toBe("1");
     const userIds: string[] = [],
       movieIds: string[] = [],
       roomIds: string[] = [],
