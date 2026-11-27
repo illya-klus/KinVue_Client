@@ -249,7 +249,7 @@ test.describe("Sprint 6 disposable full-stack acceptance", () => {
           .click();
         const incoming = friendPage
           .locator("li")
-          .filter({ hasText: ownerUserId });
+          .filter({ hasText: owner.username });
         await expect(incoming).toContainText("PENDING", { timeout: 30_000 });
         await incoming
           .getByRole("button", { name: "Accept", exact: true })
