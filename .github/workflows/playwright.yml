@@ -202,6 +202,47 @@ jobs:
           E2E_S3_ACCESS_KEY: kinvue
           E2E_S3_SECRET_KEY: kinvue-secret
         run: pnpm exec playwright test e2e/sprint-6.live.spec.ts --workers=1
+      - name: Run bounded Gateway and search load smoke
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file .env.example --profile apps restart gateway
+          ready=0
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4000/health/ready >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          email="kinvue-load-${suffix}@example.test"
+          username="load_${GITHUB_RUN_ID}"
+          password="Load-test-${suffix}-!"
+          registration="$(jq -n \
+            --arg email "$email" \
+            --arg username "$username" \
+            --arg displayName "Load smoke ${suffix}" \
+            --arg password "$password" \
+            '{email:$email,username:$username,displayName:$displayName,password:$password}')"
+          curl --fail --silent --show-error \
+            -H 'content-type: application/json' \
+            -d "$registration" http://127.0.0.1:4000/api/auth/register >/dev/null
+          login="$(jq -n \
+            --arg email "$email" \
+            --arg password "$password" \
+            '{email:$email,password:$password}')"
+          token="$(curl --fail --silent --show-error \
+            -H 'content-type: application/json' \
+            -d "$login" http://127.0.0.1:4000/api/auth/login | jq -er '.accessToken')"
+
+          BASE_URL=http://127.0.0.1:4000 LOAD_JWT="$token" \
+            LOAD_REQUESTS=60 LOAD_CONCURRENCY=10 pnpm load:gateway
+          BASE_URL=http://127.0.0.1:4000 SEARCH_Q=Rooms \
+            LOAD_REQUESTS=40 pnpm load:search
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
