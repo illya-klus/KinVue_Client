@@ -17,6 +17,33 @@ type Identity = {
   token: string;
 };
 type Frame = { type: string; version?: number; [key: string]: unknown };
+
+async function waitForFriendRequest(
+  page: Page,
+  token: string,
+  relatedUserId: string,
+) {
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`${api}/notifications`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (!response.ok()) return false;
+        const data = (await response.json()) as {
+          items: Array<{ type: string; payload: Record<string, unknown> }>;
+        };
+        return data.items.some(
+          (item) =>
+            item.type === "FRIEND_REQUEST_CREATED" &&
+            JSON.stringify(item.payload).includes(relatedUserId),
+        );
+      },
+      { timeout: 30_000, intervals: [500, 1_000, 2_000] },
+    )
+    .toBe(true);
+}
+
 test.describe("Sprint 6 disposable full-stack acceptance", () => {
   test.describe.configure({ retries: 0 });
   test.skip(
@@ -161,8 +188,11 @@ test.describe("Sprint 6 disposable full-stack acceptance", () => {
       const friend = await register(friendPage, "friend");
       grantFixtureAdmin(owner.userId);
       await ownerPage.getByRole("button", { name: "Log out" }).click();
-      await expect(ownerPage.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
+      await expect(
+        ownerPage.getByRole("link", { name: "Sign in", exact: true }),
+      ).toBeVisible();
       owner = await signIn(ownerPage, owner);
+      const ownerUserId = owner.userId;
       const ownerName = `Updated ${owner.username}`;
       await test.step("KIN-253: profile changes survive reload", async () => {
         await ownerPage.goto("/profile");
@@ -212,13 +242,16 @@ test.describe("Sprint 6 disposable full-stack acceptance", () => {
         await expect(row).toBeVisible();
         await row.getByRole("button", { name: "Add friend" }).click();
         await expect(row.getByText("Request sent")).toBeVisible();
+        await waitForFriendRequest(friendPage, friend.token, ownerUserId);
         await friendPage.goto("/friends");
         await friendPage
           .getByRole("button", { name: "Incoming", exact: true })
           .click();
-        await friendPage
+        const incoming = friendPage
           .locator("li")
-          .filter({ hasText: ownerName })
+          .filter({ hasText: ownerUserId });
+        await expect(incoming).toContainText("PENDING", { timeout: 30_000 });
+        await incoming
           .getByRole("button", { name: "Accept", exact: true })
           .click();
         await friendPage
