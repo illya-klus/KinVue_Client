@@ -271,7 +271,28 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       expect(Date.parse(access.expiresAt)).toBeGreaterThan(Date.now());
       expect(roomSockets).toEqual([]);
 
+      const loginCookie = (await context.cookies()).find(
+        (cookie) => cookie.name === "kinvue_refresh",
+      );
+      expect(loginCookie?.httpOnly).toBe(true);
+      expect(loginCookie?.path).toBe("/api/auth");
+      let refreshRequestCookie: string | undefined;
+      page.on("request", (request) => {
+        if (request.url().endsWith("/api/auth/refresh")) {
+          refreshRequestCookie = request.headers().cookie;
+        }
+      });
+      const refreshResponse = page.waitForResponse(
+        (candidate) =>
+          candidate.url().endsWith("/api/auth/refresh") &&
+          candidate.request().method() === "POST",
+      );
       await page.reload();
+      const restoredSession = await refreshResponse;
+      expect(
+        restoredSession.status(),
+        `refresh request cookie header: ${refreshRequestCookie ?? "<missing>"}`,
+      ).toBe(201);
       await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
       const restoredCookie = (await context.cookies()).find(
         (cookie) => cookie.name === "kinvue_refresh",
