@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page, type StorageState } from "@playwright/test";
 
 const liveStack = process.env.E2E_STACK === "1";
 const movieId = "aeb60a91-940b-41c9-a011-5b88ea76b387";
@@ -13,7 +13,15 @@ type Identity = {
   token: string;
 };
 let soloPlaybackIdentity: Pick<Identity, "email" | "password"> | undefined;
-let liveIdentities: { owner: Identity; friend: Identity; outsider: Identity } | undefined;
+let liveIdentities:
+  | {
+      owner: Identity;
+      friend: Identity;
+      outsider: Identity;
+      ownerStorageState: StorageState;
+      friendStorageState: StorageState;
+    }
+  | undefined;
 
 function tokenSubject(token: string) {
   const payload = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()) as {
@@ -215,6 +223,13 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       roomIds.splice(roomIds.indexOf(publicRoomId), 1);
       await expect(ownerPage).toHaveURL(/\/rooms$/);
       await expect(friendPage.getByText("This room is closed.")).toBeVisible({ timeout: 10_000 });
+      liveIdentities = {
+        owner,
+        friend,
+        outsider,
+        ownerStorageState: await ownerContext.storageState(),
+        friendStorageState: await friendContext.storageState(),
+      };
     } finally {
       if (owner) {
         for (const roomId of roomIds) {
@@ -307,16 +322,17 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
         liveIdentities,
         "the preceding room journey must create reusable live identities",
       ).toBeDefined();
-    const ownerContext = await browser.newContext();
-    const friendContext = await browser.newContext();
+    const ownerContext = await browser.newContext({
+      storageState: liveIdentities!.ownerStorageState,
+    });
+    const friendContext = await browser.newContext({
+      storageState: liveIdentities!.friendStorageState,
+    });
     const ownerPage = await ownerContext.newPage();
     const friendPage = await friendContext.newPage();
 
     try {
       const { owner, friend } = liveIdentities!;
-      await signInExisting(ownerPage, owner);
-      await signInExisting(friendPage, friend);
-
       await ownerPage.goto("/profile");
       await expect(
         ownerPage.getByRole("heading", { name: "Your profile" }),
