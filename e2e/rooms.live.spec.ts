@@ -282,12 +282,10 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
         ),
         `refresh cookie scope: ${JSON.stringify({ domain: loginCookie?.domain, path: loginCookie?.path, sameSite: loginCookie?.sameSite })}`,
       ).toBe(true);
-      let refreshRequestHasCookie = false;
-      page.on("request", async (request) => {
+      let refreshRequestHeaders: Promise<Record<string, string>> | undefined;
+      page.on("request", (request) => {
         if (request.url().endsWith("/api/auth/refresh")) {
-          refreshRequestHasCookie = Boolean(
-            (await request.allHeaders()).cookie?.includes("kinvue_refresh="),
-          );
+          refreshRequestHeaders = request.allHeaders();
         }
       });
       const refreshResponse = page.waitForResponse(
@@ -297,6 +295,9 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       );
       await page.reload();
       const restoredSession = await refreshResponse;
+      const refreshRequestHasCookie = Boolean(
+        (await refreshRequestHeaders)?.cookie?.includes("kinvue_refresh="),
+      );
       expect(
         restoredSession.status(),
         `refresh request included HttpOnly cookie: ${refreshRequestHasCookie}`,
