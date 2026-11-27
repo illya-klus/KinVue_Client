@@ -53,6 +53,13 @@ export function createRoom(body: CreateRoomPayload) {
   });
 }
 
+export function closeRoom(roomId: string) {
+  return gatewayFetch<{ status: "CLOSED"; id: string }>(
+    `/api/rooms/${roomId}`,
+    { method: "DELETE" },
+  );
+}
+
 export function createScheduledRoom(body: ScheduleRoomPayload) {
   return gatewayFetch<ScheduledRoom>("/api/scheduled-rooms", {
     method: "POST",
