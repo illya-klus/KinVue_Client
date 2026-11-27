@@ -315,14 +315,56 @@ test.describe("Sprint 6 disposable full-stack acceptance", () => {
           )
           .toBe("READY");
       });
-      await test.step("KIN-258/KIN-259: publish and published-only indexed search", async () => {
-        await ownerPage.goto(`/admin/movies/${movieId}/edit`);
-        await ownerPage
-          .getByRole("button", { name: "Publish now", exact: true })
-          .click();
-        await expect(
-          ownerPage.getByText(/Publication: PUBLISHED/),
-        ).toBeVisible();
+      await test.step("KIN-258/KIN-259: scheduled publication and published-only indexed search", async () => {
+        const scheduleAt = new Date(Date.now() + 10_000).toISOString();
+        const scheduled = await ownerPage.request.post(
+          `${api}/admin/movies/${movieId}/schedule`,
+          {
+            headers: { authorization: `Bearer ${owner!.token}` },
+            data: { publishAt: scheduleAt },
+          },
+        );
+        expect(scheduled.status()).toBe(200);
+        expect(await scheduled.json()).toMatchObject({
+          publicationStatus: "SCHEDULED",
+          mediaStatus: "READY",
+        });
+        await ownerPage.goto("/movies/search");
+        await ownerPage.getByLabel("Search movies").fill(title);
+        const unpublished = await ownerPage.request.get(
+          `${api}/movies/search?q=${encodeURIComponent(title)}`,
+        );
+        expect(unpublished.ok()).toBe(true);
+        expect(JSON.stringify(await unpublished.json())).not.toContain(movieId);
+        await expect
+          .poll(
+            async () => {
+              const response = await ownerPage.request.get(
+                `${api}/admin/movies/${movieId}`,
+                { headers: { authorization: `Bearer ${owner!.token}` } },
+              );
+              expect(response.ok()).toBe(true);
+              return (await response.json()).publicationStatus;
+            },
+            { timeout: 90_000, intervals: [1000, 2000, 5000] },
+          )
+          .toBe("PUBLISHED");
+        await expect
+          .poll(
+            async () => {
+              const response = await ownerPage.request.get(
+                `${api}/movies/search?q=${encodeURIComponent(title)}`,
+              );
+              expect(response.ok()).toBe(true);
+              const result = await response.json();
+              return result.hits.some(
+                (hit: { movieId?: string; id?: string }) =>
+                  hit.movieId === movieId || hit.id === movieId,
+              );
+            },
+            { timeout: 30_000, intervals: [1000, 2000, 5000] },
+          )
+          .toBe(true);
         await ownerPage.goto("/movies/search");
         await ownerPage.getByLabel("Search movies").fill(title);
         await expect(
