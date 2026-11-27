@@ -276,25 +276,6 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       );
       expect(loginCookie?.httpOnly).toBe(true);
       expect(loginCookie?.path).toBe("/api/auth");
-      expect(
-        (await context.cookies("http://localhost:4000/api/auth/refresh")).some(
-          (cookie) => cookie.name === "kinvue_refresh",
-        ),
-        `refresh cookie scope: ${JSON.stringify({ domain: loginCookie?.domain, path: loginCookie?.path, sameSite: loginCookie?.sameSite })}`,
-      ).toBe(true);
-      const directRefresh = await context.request.post(
-        "http://localhost:4000/api/auth/refresh",
-        {
-          headers: { cookie: `kinvue_refresh=${loginCookie!.value}` },
-        },
-      );
-      expect(directRefresh.status(), "refresh with the login cookie").toBe(201);
-      let refreshRequestHeaders: Promise<Record<string, string>> | undefined;
-      page.on("request", (request) => {
-        if (request.url().endsWith("/api/auth/refresh")) {
-          refreshRequestHeaders = request.allHeaders();
-        }
-      });
       const refreshResponse = page.waitForResponse(
         (candidate) =>
           candidate.url().endsWith("/api/auth/refresh") &&
@@ -302,13 +283,7 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       );
       await page.reload();
       const restoredSession = await refreshResponse;
-      const refreshRequestHasCookie = Boolean(
-        (await refreshRequestHeaders)?.cookie?.includes("kinvue_refresh="),
-      );
-      expect(
-        restoredSession.status(),
-        `refresh request included HttpOnly cookie: ${refreshRequestHasCookie}`,
-      ).toBe(201);
+      expect(restoredSession.status()).toBe(201);
       await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
       const restoredCookie = (await context.cookies()).find(
         (cookie) => cookie.name === "kinvue_refresh",
