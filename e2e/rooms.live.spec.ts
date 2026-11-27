@@ -5,8 +5,15 @@ const liveStack = process.env.E2E_STACK === "1";
 const movieId = "aeb60a91-940b-41c9-a011-5b88ea76b387";
 const api = "http://localhost:4000/api";
 
-type Identity = { email: string; password: string; userId: string; token: string };
+type Identity = {
+  email: string;
+  password: string;
+  userId: string;
+  username: string;
+  token: string;
+};
 let soloPlaybackIdentity: Pick<Identity, "email" | "password"> | undefined;
+let liveIdentities: { owner: Identity; friend: Identity; outsider: Identity } | undefined;
 
 function tokenSubject(token: string) {
   const payload = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()) as {
@@ -53,7 +60,27 @@ async function registerAndSignIn(page: Page, label: string): Promise<Identity> {
   expect(loginResponse.status()).toBe(201);
   const { accessToken } = (await loginResponse.json()) as { accessToken: string };
   await expect(page).toHaveURL(/\/movies\/search$/);
-  return { email, password, token: accessToken, userId: tokenSubject(accessToken) };
+  return {
+    email,
+    password,
+    token: accessToken,
+    userId: tokenSubject(accessToken),
+    username: `e2e_${id}`,
+  };
+}
+
+async function signInExisting(page: Page, identity: Identity) {
+  await page.goto("/login");
+  const login = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/auth/login") &&
+      response.request().method() === "POST",
+  );
+  await page.getByLabel("Email").fill(identity.email);
+  await page.getByLabel("Password").fill(identity.password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  expect((await login).status()).toBe(201);
+  await expect(page).toHaveURL(/\/movies\/search$/);
 }
 
 test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/279/290)", () => {
@@ -84,6 +111,7 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       soloPlaybackIdentity = { email: owner.email, password: owner.password };
       const friend = await registerAndSignIn(friendPage, "friend");
       const outsider = await registerAndSignIn(outsiderPage, "outsider");
+      liveIdentities = { owner, friend, outsider };
 
       await openMovieFixture(ownerPage);
       await expect(ownerPage.getByRole("heading", { name: "Watch room" })).toBeVisible({ timeout: 30_000 });
@@ -242,8 +270,110 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       expect(signedUrl.searchParams.get("X-Amz-Expires")).toBe("600");
       expect(Date.parse(access.expiresAt)).toBeGreaterThan(Date.now());
       expect(roomSockets).toEqual([]);
+
+      await page.reload();
+      await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
+      const restoredCookie = (await context.cookies()).find(
+        (cookie) => cookie.name === "kinvue_refresh",
+      );
+      expect(restoredCookie?.httpOnly).toBe(true);
+      await page.getByRole("button", { name: "Log out" }).click();
+      await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
+      expect(
+        (await context.cookies()).some((cookie) => cookie.name === "kinvue_refresh"),
+      ).toBe(false);
     } finally {
       await context.close();
     }
   });
+
+  test(
+    "live profile, friend request, notification and watchlist journeys",
+    async ({ browser }) => {
+    test.setTimeout(180_000);
+      expect(
+        liveIdentities,
+        "the preceding room journey must create reusable live identities",
+      ).toBeDefined();
+    const ownerContext = await browser.newContext();
+    const friendContext = await browser.newContext();
+    const ownerPage = await ownerContext.newPage();
+    const friendPage = await friendContext.newPage();
+
+    try {
+      const { owner, friend } = liveIdentities!;
+      await signInExisting(ownerPage, owner);
+      await signInExisting(friendPage, friend);
+
+      await ownerPage.goto("/profile");
+      await expect(
+        ownerPage.getByRole("heading", { name: "Your profile" }),
+      ).toBeVisible();
+      await expect(ownerPage.getByText(`@${owner.username}`)).toBeVisible();
+      await ownerPage.getByLabel("Display name").fill("E2E owner acceptance profile");
+      await ownerPage.getByRole("button", { name: "Save changes" }).click();
+      await expect(ownerPage.getByText("Profile saved")).toBeVisible();
+
+      await ownerPage.goto("/users/search");
+      await ownerPage.getByPlaceholder("Username or display name").fill(friend.username);
+      await ownerPage.getByRole("button", { name: "Search", exact: true }).click();
+      await expect(ownerPage.getByText(`@${friend.username}`)).toBeVisible({
+        timeout: 30_000,
+      });
+      await ownerPage.getByRole("button", { name: "Add friend" }).click();
+      await expect(ownerPage.getByText("Request sent")).toBeVisible();
+
+      const friendRequestNotice = friendPage.getByText(
+        `Friend request from ${owner.userId}`,
+      );
+      await friendPage.getByRole("button", { name: "Notifications" }).click();
+      await expect
+        .poll(
+          async () => {
+            if (await friendRequestNotice.isVisible().catch(() => false)) {
+              return true;
+            }
+            await friendPage
+              .getByRole("button", { name: "Notifications" })
+              .click();
+            await friendPage
+              .getByRole("button", { name: "Notifications" })
+              .click();
+            return friendRequestNotice.isVisible().catch(() => false);
+          },
+          { timeout: 30_000, intervals: [1_000, 2_000] },
+        )
+        .toBe(true);
+
+      await friendPage.goto("/friends");
+      await friendPage.getByRole("button", { name: "Incoming" }).click();
+      const incoming = friendPage.getByRole("listitem").filter({ hasText: friend.userId });
+      await expect(incoming).toContainText("PENDING");
+      await incoming.getByRole("button", { name: "Accept" }).click();
+      await friendPage.getByRole("button", { name: "Friends", exact: true }).click();
+      await expect(friendPage.getByText(`@${owner.username}`)).toBeVisible();
+
+      await ownerPage.getByRole("link", { name: "Movies" }).click();
+      await openMovieFixture(ownerPage);
+      await ownerPage.getByRole("button", { name: "Add to watchlist" }).click();
+      await expect(
+        ownerPage.getByRole("button", { name: "Remove from watchlist" }),
+      ).toBeVisible();
+      await ownerPage.goto("/watchlist");
+      await expect(
+        ownerPage.getByRole("link", { name: "Rooms live E2E fixture" }),
+      ).toBeVisible();
+      await ownerPage.getByRole("button", { name: "Remove", exact: true }).click();
+      await expect(ownerPage.getByText("Watchlist is empty")).toBeVisible();
+
+      await ownerPage.getByRole("button", { name: "Notifications" }).click();
+      await expect(
+        ownerPage.getByText(`${friend.userId} accepted your request`),
+      ).toBeVisible({ timeout: 30_000 });
+    } finally {
+      await ownerContext.close();
+      await friendContext.close();
+    }
+    },
+  );
 });
