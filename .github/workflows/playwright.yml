@@ -40,6 +40,7 @@ jobs:
       - name: Install client and browser
         run: |
           pnpm install --frozen-lockfile
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
           pnpm exec playwright install chromium --with-deps
       - name: Build client
         run: pnpm build
@@ -62,7 +63,10 @@ jobs:
           docker compose --env-file .env.example --profile apps up -d --build
           --wait --wait-timeout 240
           postgres movie-postgres notifications-postgres rooms-postgres users-mongo
-          meilisearch rooms-redis rabbitmq gateway users movie notification rooms
+          meilisearch rooms-redis rabbitmq minio gateway users movie notification rooms transcode-worker
+      - name: Initialize private disposable media bucket
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        run: docker compose --env-file .env.example run --rm minio-init
       - name: Migrate Auth and start an ephemeral signing service
         working-directory: ${{ github.workspace }}/KinVue_Server
         shell: bash
@@ -122,7 +126,23 @@ jobs:
           pnpm --filter @kinvue/movie migrate:deploy
           docker compose --env-file .env.example exec -T movie-postgres \
             psql -U kinvue_movie -d kinvue_movie -v ON_ERROR_STOP=1 -c \
-            "INSERT INTO movies (movie_id,title,description,genres,created_by_user_id,publication_status,media_status,hls_master_key,updated_at) VALUES ('aeb60a91-940b-41c9-a011-5b88ea76b387','Rooms live E2E fixture','Disposable movie used by KinVue browser acceptance tests.','[]','e8bbdc28-54bb-4b69-96e8-8e602441e44a','PUBLISHED','READY','e2e/master.m3u8',NOW()) ON CONFLICT (movie_id) DO UPDATE SET publication_status='PUBLISHED',media_status='READY',updated_at=NOW()"
+            "INSERT INTO movies (movie_id,title,description,genres,created_by_user_id,publication_status,media_status,hls_master_key,updated_at) VALUES ('aeb60a91-940b-41c9-a011-5b88ea76b387','Rooms live E2E fixture','Disposable movie used by KinVue browser acceptance tests.','[]','e8bbdc28-54bb-4b69-96e8-8e602441e44a','PUBLISHED','READY','movies/aeb60a91-940b-41c9-a011-5b88ea76b387/hls/master.m3u8',NOW()) ON CONFLICT (movie_id) DO UPDATE SET publication_status='PUBLISHED',media_status='READY',hls_master_key=EXCLUDED.hls_master_key,updated_at=NOW()"
+          mkdir -p "$RUNNER_TEMP/kinvue-hls-fixture"
+          cat > "$RUNNER_TEMP/kinvue-hls-fixture/master.m3u8" <<'EOF'
+          #EXTM3U
+          #EXT-X-VERSION:3
+          #EXT-X-TARGETDURATION:1
+          #EXTINF:1.0,
+          segment.ts
+          #EXT-X-ENDLIST
+          EOF
+          printf 'disposable HLS segment fixture' > "$RUNNER_TEMP/kinvue-hls-fixture/segment.ts"
+          docker compose --env-file .env.example run --rm \
+            --volume "$RUNNER_TEMP/kinvue-hls-fixture:/fixture:ro" \
+            --entrypoint /bin/sh minio-init -c \
+            'mc alias set local http://minio:9000 "$S3_ACCESS_KEY" "$S3_SECRET_KEY" && \
+             mc cp /fixture/master.m3u8 local/kinvue-media/movies/aeb60a91-940b-41c9-a011-5b88ea76b387/hls/master.m3u8 && \
+             mc cp /fixture/segment.ts local/kinvue-media/movies/aeb60a91-940b-41c9-a011-5b88ea76b387/hls/segment.ts'
           pnpm --filter @kinvue/movie search:rebuild
       - name: Wait for Gateway and Rooms readiness
         run: |
@@ -139,6 +159,103 @@ jobs:
         env:
           E2E_STACK: "1"
         run: pnpm exec playwright test e2e/rooms.live.spec.ts --workers=1
+      - name: Generate a real multipart video inside the worker container
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.e2e-fixtures"
+          docker compose --env-file .env.example --profile apps run --rm --no-deps \
+            --user "$(id -u):$(id -g)" -v "$GITHUB_WORKSPACE/.e2e-fixtures:/fixtures" \
+            --entrypoint ffmpeg transcode-worker \
+            -hide_banner -loglevel error -y \
+            -f lavfi -i testsrc2=size=1280x720:rate=24 \
+            -f lavfi -i sine=frequency=440:sample_rate=48000 \
+            -t 25 -c:v libx264 -threads 2 -preset veryfast \
+            -b:v 5M -minrate 5M -maxrate 5M -bufsize 10M \
+            -x264-params nal-hrd=cbr:force-cfr=1 -pix_fmt yuv420p \
+            -c:a aac -movflags +faststart /fixtures/source.mp4
+          test "$(stat -c%s "$GITHUB_WORKSPACE/.e2e-fixtures/source.mp4")" -gt 8388608
+      - name: Isolate Gateway rate windows between independent live suites
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file .env.example --profile apps restart gateway
+          ready=0
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4000/health/ready >/dev/null; then ready=1; break; fi
+            sleep 1
+          done
+          test "$ready" = "1"
+      - name: Run Sprint 6 real media and recovery acceptance
+        env:
+          E2E_SPRINT6: "1"
+          E2E_DISPOSABLE_STACK: "1"
+          E2E_BACKEND_DIR: ${{ github.workspace }}/KinVue_Server
+          E2E_MEDIA_FIXTURE: ${{ github.workspace }}/.e2e-fixtures/source.mp4
+          E2E_AUTH_DATABASE_URL: postgresql://kinvue:kinvue@localhost:5432/kinvue
+          E2E_MOVIE_DATABASE_URL: postgresql://kinvue_movie:kinvue_movie@localhost:5434/kinvue_movie
+          E2E_USERS_MONGO_URL: mongodb://127.0.0.1:27017/kinvue_users?replicaSet=kinvue-users&directConnection=true
+          E2E_MEILI_URL: http://localhost:7700
+          E2E_MEILI_KEY: dev-master-key-change-me
+          E2E_S3_URL: http://localhost:9000
+          E2E_S3_ACCESS_KEY: kinvue
+          E2E_S3_SECRET_KEY: kinvue-secret
+        run: pnpm exec playwright test e2e/sprint-6.live.spec.ts --workers=1
+      - name: Run bounded Gateway and search load smoke
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file .env.example --profile apps restart gateway
+          ready=0
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4000/health/ready >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          test "$ready" = "1"
+
+          suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          email="kinvue-load-${suffix}@example.test"
+          username="load_${GITHUB_RUN_ID}"
+          password="Load-test-${suffix}-!"
+          registration="$(jq -n \
+            --arg email "$email" \
+            --arg username "$username" \
+            --arg displayName "Load smoke ${suffix}" \
+            --arg password "$password" \
+            '{email:$email,username:$username,displayName:$displayName,password:$password}')"
+          curl --fail --silent --show-error \
+            -H 'content-type: application/json' \
+            -d "$registration" http://127.0.0.1:4000/api/auth/register >/dev/null
+          login="$(jq -n \
+            --arg email "$email" \
+            --arg password "$password" \
+            '{email:$email,password:$password}')"
+          token="$(curl --fail --silent --show-error \
+            -H 'content-type: application/json' \
+            -d "$login" http://127.0.0.1:4000/api/auth/login | jq -er '.accessToken')"
+
+          BASE_URL=http://127.0.0.1:4000 LOAD_JWT="$token" \
+            LOAD_REQUESTS=60 LOAD_CONCURRENCY=10 pnpm load:gateway
+          BASE_URL=http://127.0.0.1:4000 SEARCH_Q=Rooms \
+            LOAD_REQUESTS=40 pnpm load:search
+      - name: Capture Gateway request-ID log sample
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        shell: bash
+        run: |
+          set -euo pipefail
+          logs="$(docker compose --env-file .env.example --profile apps logs \
+            --no-color --tail=500 gateway)"
+          samples="$(printf '%s\n' "$logs" | \
+            grep -E '"event":"http_request".*"requestId":"[^"]+"' | \
+            tail -n 5)"
+          test -n "$samples"
+          printf '%s\n' "$samples"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -151,7 +268,7 @@ jobs:
         working-directory: ${{ github.workspace }}/KinVue_Server
         run: |
           docker logs --tail=100 kinvue-auth-e2e || true
-          docker compose --env-file .env.example --profile apps logs --no-color --tail=100 gateway users rooms movie
+          docker compose --env-file .env.example --profile apps logs --no-color --tail=100 gateway users rooms movie transcode-worker
       - name: Stop disposable stack
         if: always()
         working-directory: ${{ github.workspace }}/KinVue_Server
