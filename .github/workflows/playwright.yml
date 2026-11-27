@@ -40,6 +40,7 @@ jobs:
       - name: Install client and browser
         run: |
           pnpm install --frozen-lockfile
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
           pnpm exec playwright install chromium --with-deps
       - name: Build client
         run: pnpm build
