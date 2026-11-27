@@ -1,10 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  expect,
-  test,
-  type BrowserContext,
-  type Page,
-} from "@playwright/test";
+import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
 const liveStack = process.env.E2E_STACK === "1";
 const movieId = "aeb60a91-940b-41c9-a011-5b88ea76b387";
@@ -29,7 +24,9 @@ let liveIdentities:
   | undefined;
 
 function tokenSubject(token: string) {
-  const payload = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()) as {
+  const payload = JSON.parse(
+    Buffer.from(token.split(".")[1]!, "base64url").toString(),
+  ) as {
     sub?: string;
   };
   expect(payload.sub).toMatch(/^[0-9a-f-]{36}$/i);
@@ -37,13 +34,20 @@ function tokenSubject(token: string) {
 }
 
 async function openMovieFixture(page: Page) {
-  await expect(page.getByRole("heading", { name: "Movie search" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Movie search" }),
+  ).toBeVisible();
   await page.getByLabel("Search movies").fill("Rooms live E2E fixture");
-  const movieLink = page.getByRole("link", { name: "Rooms live E2E fixture", exact: true });
+  const movieLink = page.getByRole("link", {
+    name: "Rooms live E2E fixture",
+    exact: true,
+  });
   await expect(movieLink).toBeVisible({ timeout: 30_000 });
   await movieLink.click();
   await expect(page).toHaveURL(new RegExp(`/movies/${movieId}$`));
-  await expect(page.getByRole("heading", { name: "Rooms live E2E fixture" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Rooms live E2E fixture" }),
+  ).toBeVisible();
 }
 
 async function waitForNotification(
@@ -84,21 +88,27 @@ async function registerAndSignIn(page: Page, label: string): Promise<Identity> {
   await page.getByLabel("Password (min 12)").fill(password);
   await page.getByLabel("Confirm password").fill(password);
   const registration = page.waitForResponse(
-    (response) => response.url().endsWith("/api/auth/register") && response.request().method() === "POST",
+    (response) =>
+      response.url().endsWith("/api/auth/register") &&
+      response.request().method() === "POST",
   );
   await page.getByRole("button", { name: "Register" }).click();
   expect((await registration).status()).toBe(201);
   await expect(page).toHaveURL(/\/login$/);
 
   const login = page.waitForResponse(
-    (response) => response.url().endsWith("/api/auth/login") && response.request().method() === "POST",
+    (response) =>
+      response.url().endsWith("/api/auth/login") &&
+      response.request().method() === "POST",
   );
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
   await page.getByRole("button", { name: "Sign in" }).click();
   const loginResponse = await login;
   expect(loginResponse.status()).toBe(201);
-  const { accessToken } = (await loginResponse.json()) as { accessToken: string };
+  const { accessToken } = (await loginResponse.json()) as {
+    accessToken: string;
+  };
   await expect(page).toHaveURL(/\/movies\/search$/);
   return {
     email,
@@ -111,7 +121,10 @@ async function registerAndSignIn(page: Page, label: string): Promise<Identity> {
 
 test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/279/290)", () => {
   test.describe.configure({ mode: "serial", retries: 0 });
-  test.skip(!liveStack, "Run with E2E_STACK=1 against the disposable live stack");
+  test.skip(
+    !liveStack,
+    "Run with E2E_STACK=1 against the disposable live stack",
+  );
 
   test("private invitation, public discovery, member roles and playback authorization", async ({
     browser,
@@ -138,96 +151,193 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       const friend = await registerAndSignIn(friendPage, "friend");
       const outsider = await registerAndSignIn(outsiderPage, "outsider");
       await openMovieFixture(ownerPage);
-      await expect(ownerPage.getByRole("heading", { name: "Watch room" })).toBeVisible({ timeout: 30_000 });
+      await expect(
+        ownerPage.getByRole("heading", { name: "Watch room" }),
+      ).toBeVisible({ timeout: 30_000 });
       await ownerPage.getByLabel("Private").check();
       await ownerPage.getByRole("button", { name: "Create room" }).click();
-      await expect(ownerPage).toHaveURL(/\/rooms\/[0-9a-f-]+$/i, { timeout: 30_000 });
-      const privateRoomId = new URL(ownerPage.url()).pathname.split("/").at(-1)!;
+      await expect(ownerPage).toHaveURL(/\/rooms\/[0-9a-f-]+$/i, {
+        timeout: 30_000,
+      });
+      const privateRoomId = new URL(ownerPage.url()).pathname
+        .split("/")
+        .at(-1)!;
       roomIds.push(privateRoomId);
-      await expect(ownerPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("OWNER", { timeout: 30_000 });
+      await expect(
+        ownerPage.getByRole("status").filter({ hasText: "Your role" }),
+      ).toContainText("OWNER", { timeout: 30_000 });
 
-      const privateSocket = await expect.poll(() => ownerSockets.find((url) => new URL(url).searchParams.get("roomId") === privateRoomId)).toBeTruthy();
+      const privateSocket = await expect
+        .poll(() =>
+          ownerSockets.find(
+            (url) => new URL(url).searchParams.get("roomId") === privateRoomId,
+          ),
+        )
+        .toBeTruthy();
       void privateSocket;
-      const ownerSocketUrl = new URL(ownerSockets.find((url) => new URL(url).searchParams.get("roomId") === privateRoomId)!);
+      const ownerSocketUrl = new URL(
+        ownerSockets.find(
+          (url) => new URL(url).searchParams.get("roomId") === privateRoomId,
+        )!,
+      );
       expect(ownerSocketUrl.pathname).toBe("/rooms");
       expect(ownerSocketUrl.searchParams.get("token")).toBe(owner.token);
 
-      await ownerPage.getByRole("button", { name: "Create and copy invite link" }).click();
-      await expect(ownerPage.getByText("Private invite link copied.", { exact: true })).toBeVisible();
-      const privateInvite = await ownerPage.evaluate(() => navigator.clipboard.readText());
-      expect(privateInvite).toMatch(new RegExp(`/invite/${privateRoomId}#token=`));
+      await ownerPage
+        .getByRole("button", { name: "Create and copy invite link" })
+        .click();
+      await expect(
+        ownerPage.getByText("Private invite link copied.", { exact: true }),
+      ).toBeVisible();
+      const privateInvite = await ownerPage.evaluate(() =>
+        navigator.clipboard.readText(),
+      );
+      expect(privateInvite).toMatch(
+        new RegExp(`/invite/${privateRoomId}#token=`),
+      );
 
-      const outsiderJoin = await outsiderPage.request.post(`${api}/rooms/${privateRoomId}/invites/accept`, {
-        headers: { authorization: `Bearer ${outsider.token}` },
-        data: { token: "invalid-invite-token" },
-      });
+      const outsiderJoin = await outsiderPage.request.post(
+        `${api}/rooms/${privateRoomId}/invites/accept`,
+        {
+          headers: { authorization: `Bearer ${outsider.token}` },
+          data: { token: "invalid-invite-token" },
+        },
+      );
       expect(outsiderJoin.status()).toBe(403);
 
       await friendPage.goto(privateInvite);
-      await expect(friendPage).toHaveURL((url) =>
-        url.pathname === `/rooms/${privateRoomId}` || url.pathname === "/login",
+      await expect(friendPage).toHaveURL(
+        (url) =>
+          url.pathname === `/rooms/${privateRoomId}` ||
+          url.pathname === "/login",
         { timeout: 30_000 },
       );
       if (new URL(friendPage.url()).pathname === "/login") {
         const login = friendPage.waitForResponse(
-          (response) => response.url().endsWith("/api/auth/login") && response.request().method() === "POST",
+          (response) =>
+            response.url().endsWith("/api/auth/login") &&
+            response.request().method() === "POST",
         );
         await friendPage.getByLabel("Email").fill(friend.email);
         await friendPage.getByLabel("Password").fill(friend.password);
         await friendPage.getByRole("button", { name: "Sign in" }).click();
         const loginResponse = await login;
         expect(loginResponse.status()).toBe(201);
-        friend.token = ((await loginResponse.json()) as { accessToken: string }).accessToken;
+        friend.token = (
+          (await loginResponse.json()) as { accessToken: string }
+        ).accessToken;
       }
-      await expect(friendPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("VIEWER", { timeout: 30_000 });
-      await expect(friendPage.getByText("Only the owner and controllers can change playback.")).toBeVisible();
+      await expect(
+        friendPage.getByRole("status").filter({ hasText: "Your role" }),
+      ).toContainText("VIEWER", { timeout: 30_000 });
+      await expect(
+        friendPage.getByText(
+          "Only the owner and controllers can change playback.",
+        ),
+      ).toBeVisible();
       for (const control of ["Play", "Pause", "Seek"]) {
-        await expect(friendPage.getByRole("button", { name: control, exact: true })).toBeDisabled();
+        await expect(
+          friendPage.getByRole("button", { name: control, exact: true }),
+        ).toBeDisabled();
       }
 
       // Try the forbidden command over a second, real authenticated socket. Rooms must
       // reject it server-side and keep the shared playback version unchanged.
-      const rejection = friendPage.evaluate(({ id, token }) => new Promise<string>((resolve, reject) => {
-        const socket = new WebSocket(`ws://localhost:4014/rooms?roomId=${id}&token=${encodeURIComponent(token)}`);
-        const timeout = window.setTimeout(() => { socket.close(); reject(new Error("Unauthorized playback command timed out")); }, 10_000);
-        socket.addEventListener("message", (event) => {
-          const message = JSON.parse(String(event.data)) as { type?: string };
-          if (message.type === "room.state_sync") socket.send(JSON.stringify({ type: "room.play", roomId: id, eventId: crypto.randomUUID(), positionSeconds: 0 }));
-          if (message.type === "room.error") { window.clearTimeout(timeout); socket.close(); resolve(message.type); }
-        });
-        socket.addEventListener("error", () => { window.clearTimeout(timeout); reject(new Error("Unauthorized socket could not be opened")); });
-      }), { id: privateRoomId, token: friend.token });
+      const rejection = friendPage.evaluate(
+        ({ id, token }) =>
+          new Promise<string>((resolve, reject) => {
+            const socket = new WebSocket(
+              `ws://localhost:4014/rooms?roomId=${id}&token=${encodeURIComponent(token)}`,
+            );
+            const timeout = window.setTimeout(() => {
+              socket.close();
+              reject(new Error("Unauthorized playback command timed out"));
+            }, 10_000);
+            socket.addEventListener("message", (event) => {
+              const message = JSON.parse(String(event.data)) as {
+                type?: string;
+              };
+              if (message.type === "room.state_sync")
+                socket.send(
+                  JSON.stringify({
+                    type: "room.play",
+                    roomId: id,
+                    eventId: crypto.randomUUID(),
+                    positionSeconds: 0,
+                  }),
+                );
+              if (message.type === "room.error") {
+                window.clearTimeout(timeout);
+                socket.close();
+                resolve(message.type);
+              }
+            });
+            socket.addEventListener("error", () => {
+              window.clearTimeout(timeout);
+              reject(new Error("Unauthorized socket could not be opened"));
+            });
+          }),
+        { id: privateRoomId, token: friend.token },
+      );
       await expect(rejection).resolves.toBe("room.error");
-      await expect(ownerPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("version 0");
+      await expect(
+        ownerPage.getByRole("status").filter({ hasText: "Your role" }),
+      ).toContainText("version 0");
 
-      await expect(ownerPage.getByLabel(`Role for ${friend.userId}`)).toHaveValue("VIEWER", { timeout: 30_000 });
-      await ownerPage.getByLabel(`Role for ${friend.userId}`).selectOption("CONTROLLER");
-      await expect(friendPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("CONTROLLER", { timeout: 30_000 });
-      await expect(friendPage.getByRole("button", { name: "Play", exact: true })).toBeEnabled();
-      await friendPage.getByRole("button", { name: "Play", exact: true }).click();
-      await expect(ownerPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("PLAYING", { timeout: 10_000 });
+      await expect(
+        ownerPage.getByLabel(`Role for ${friend.userId}`),
+      ).toHaveValue("VIEWER", { timeout: 30_000 });
+      await ownerPage
+        .getByLabel(`Role for ${friend.userId}`)
+        .selectOption("CONTROLLER");
+      await expect(
+        friendPage.getByRole("status").filter({ hasText: "Your role" }),
+      ).toContainText("CONTROLLER", { timeout: 30_000 });
+      await expect(
+        friendPage.getByRole("button", { name: "Play", exact: true }),
+      ).toBeEnabled();
+      await friendPage
+        .getByRole("button", { name: "Play", exact: true })
+        .click();
+      await expect(
+        ownerPage.getByRole("status").filter({ hasText: "Your role" }),
+      ).toContainText("PLAYING", { timeout: 10_000 });
 
       await ownerPage.getByRole("link", { name: "Movies" }).click();
       await openMovieFixture(ownerPage);
       await ownerPage.getByLabel("Public").check();
       await ownerPage.getByRole("button", { name: "Create room" }).click();
-      await expect(ownerPage).toHaveURL(/\/rooms\/[0-9a-f-]+$/i, { timeout: 30_000 });
+      await expect(ownerPage).toHaveURL(/\/rooms\/[0-9a-f-]+$/i, {
+        timeout: 30_000,
+      });
       const publicRoomId = new URL(ownerPage.url()).pathname.split("/").at(-1)!;
       roomIds.push(publicRoomId);
-      await expect(ownerPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("OWNER", { timeout: 30_000 });
+      await expect(
+        ownerPage.getByRole("status").filter({ hasText: "Your role" }),
+      ).toContainText("OWNER", { timeout: 30_000 });
 
       await friendPage.getByRole("link", { name: "Rooms" }).click();
-      await expect(friendPage.getByRole("heading", { name: "Public rooms" })).toBeVisible();
-      const roomRow = friendPage.locator("li").filter({ hasText: publicRoomId });
+      await expect(
+        friendPage.getByRole("heading", { name: "Public rooms" }),
+      ).toBeVisible();
+      const roomRow = friendPage
+        .locator("li")
+        .filter({ hasText: publicRoomId });
       await expect(roomRow).toBeVisible({ timeout: 30_000 });
       await roomRow.getByRole("link", { name: "Join" }).click();
       await expect(friendPage).toHaveURL(new RegExp(`/rooms/${publicRoomId}$`));
-      await expect(friendPage.getByRole("status").filter({ hasText: "Your role" })).toContainText("VIEWER", { timeout: 30_000 });
+      await expect(
+        friendPage.getByRole("status").filter({ hasText: "Your role" }),
+      ).toContainText("VIEWER", { timeout: 30_000 });
       for (const control of ["Play", "Pause", "Seek"]) {
-        await expect(friendPage.getByRole("button", { name: control, exact: true })).toBeDisabled();
+        await expect(
+          friendPage.getByRole("button", { name: control, exact: true }),
+        ).toBeDisabled();
       }
 
-      await expect(friendPage.getByRole("button", { name: "Close room" })).toHaveCount(0);
+      await expect(
+        friendPage.getByRole("button", { name: "Close room" }),
+      ).toHaveCount(0);
       const closeResponse = ownerPage.waitForResponse(
         (response) =>
           response.url().endsWith(`/api/rooms/${publicRoomId}`) &&
@@ -238,7 +348,9 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       expect((await closeResponse).status()).toBe(200);
       roomIds.splice(roomIds.indexOf(publicRoomId), 1);
       await expect(ownerPage).toHaveURL(/\/rooms$/);
-      await expect(friendPage.getByText("This room is closed.")).toBeVisible({ timeout: 10_000 });
+      await expect(friendPage.getByText("This room is closed.")).toBeVisible({
+        timeout: 10_000,
+      });
       liveIdentities = {
         owner,
         friend,
@@ -249,10 +361,16 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
     } finally {
       if (owner) {
         for (const roomId of roomIds) {
-          const response = await ownerPage.request.delete(`${api}/rooms/${roomId}`, {
-            headers: { authorization: `Bearer ${owner.token}` },
-          });
-          expect(response.ok(), `room cleanup for ${roomId} failed: ${response.status()}`).toBe(true);
+          const response = await ownerPage.request.delete(
+            `${api}/rooms/${roomId}`,
+            {
+              headers: { authorization: `Bearer ${owner.token}` },
+            },
+          );
+          expect(
+            response.ok(),
+            `room cleanup for ${roomId} failed: ${response.status()}`,
+          ).toBe(true);
         }
       }
       await ownerContext.close();
@@ -269,16 +387,22 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
     const page = await context.newPage();
     const roomSockets: string[] = [];
     page.on("websocket", (socket) => {
-      if (new URL(socket.url()).pathname === "/rooms") roomSockets.push(socket.url());
+      if (new URL(socket.url()).pathname === "/rooms")
+        roomSockets.push(socket.url());
     });
 
     try {
-      expect(soloPlaybackIdentity, "the preceding room journey must create the solo test account").toBeDefined();
+      expect(
+        soloPlaybackIdentity,
+        "the preceding room journey must create the solo test account",
+      ).toBeDefined();
       await page.goto("/login");
       await page.getByLabel("Email").fill(soloPlaybackIdentity!.email);
       await page.getByLabel("Password").fill(soloPlaybackIdentity!.password);
       const login = page.waitForResponse(
-        (response) => response.url().endsWith("/api/auth/login") && response.request().method() === "POST",
+        (response) =>
+          response.url().endsWith("/api/auth/login") &&
+          response.request().method() === "POST",
       );
       await page.getByRole("button", { name: "Sign in" }).click();
       expect((await login).status()).toBe(201);
@@ -297,7 +421,9 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
         expiresAt: string;
       };
       const signedUrl = new URL(access.url);
-      expect(signedUrl.pathname).toContain("/kinvue-media/e2e/master.m3u8");
+      expect(signedUrl.pathname).toMatch(
+        /\/kinvue-media\/_access\/[0-9a-f-]+\/master\.m3u8$/i,
+      );
       expect(signedUrl.searchParams.get("X-Amz-Expires")).toBe("600");
       expect(Date.parse(access.expiresAt)).toBeGreaterThan(Date.now());
       expect(roomSockets).toEqual([]);
@@ -321,23 +447,27 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       );
       expect(restoredCookie?.httpOnly).toBe(true);
       await page.getByRole("button", { name: "Log out" }).click();
-      await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
+      await expect(
+        page.getByRole("link", { name: "Sign in", exact: true }),
+      ).toBeVisible();
       expect(
-        (await context.cookies()).some((cookie) => cookie.name === "kinvue_refresh"),
+        (await context.cookies()).some(
+          (cookie) => cookie.name === "kinvue_refresh",
+        ),
       ).toBe(false);
     } finally {
       await context.close();
     }
   });
 
-  test(
-    "live profile, friend request, notification and watchlist journeys",
-    async ({ browser }) => {
+  test("live profile, friend request, notification and watchlist journeys", async ({
+    browser,
+  }) => {
     test.setTimeout(180_000);
-      expect(
-        liveIdentities,
-        "the preceding room journey must create reusable live identities",
-      ).toBeDefined();
+    expect(
+      liveIdentities,
+      "the preceding room journey must create reusable live identities",
+    ).toBeDefined();
     const ownerContext = await browser.newContext({
       storageState: liveIdentities!.ownerStorageState,
     });
@@ -354,13 +484,19 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
         ownerPage.getByRole("heading", { name: "Your profile" }),
       ).toBeVisible();
       await expect(ownerPage.getByText(`@${owner.username}`)).toBeVisible();
-      await ownerPage.getByLabel("Display name").fill("E2E owner acceptance profile");
+      await ownerPage
+        .getByLabel("Display name")
+        .fill("E2E owner acceptance profile");
       await ownerPage.getByRole("button", { name: "Save changes" }).click();
       await expect(ownerPage.getByText("Profile saved")).toBeVisible();
 
       await ownerPage.goto("/users/search");
-      await ownerPage.getByPlaceholder("Username or display name").fill(friend.username);
-      await ownerPage.getByRole("button", { name: "Search", exact: true }).click();
+      await ownerPage
+        .getByPlaceholder("Username or display name")
+        .fill(friend.username);
+      await ownerPage
+        .getByRole("button", { name: "Search", exact: true })
+        .click();
       await expect(ownerPage.getByText(`@${friend.username}`)).toBeVisible({
         timeout: 30_000,
       });
@@ -391,10 +527,14 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
 
       await friendPage.goto("/friends");
       await friendPage.getByRole("button", { name: "Incoming" }).click();
-      const incoming = friendPage.getByRole("listitem").filter({ hasText: friend.userId });
+      const incoming = friendPage
+        .getByRole("listitem")
+        .filter({ hasText: friend.userId });
       await expect(incoming).toContainText("PENDING");
       await incoming.getByRole("button", { name: "Accept" }).click();
-      await friendPage.getByRole("button", { name: "Friends", exact: true }).click();
+      await friendPage
+        .getByRole("button", { name: "Friends", exact: true })
+        .click();
       await expect(friendPage.getByText(`@${owner.username}`)).toBeVisible();
 
       await ownerPage.getByRole("link", { name: "Movies" }).click();
@@ -407,7 +547,9 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       await expect(
         ownerPage.getByRole("link", { name: "Rooms live E2E fixture" }),
       ).toBeVisible();
-      await ownerPage.getByRole("button", { name: "Remove", exact: true }).click();
+      await ownerPage
+        .getByRole("button", { name: "Remove", exact: true })
+        .click();
       await expect(ownerPage.getByText("Watchlist is empty")).toBeVisible();
 
       await waitForNotification(
@@ -430,6 +572,5 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       await ownerContext.close();
       await friendContext.close();
     }
-    },
-  );
+  });
 });
