@@ -47,7 +47,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: illya-klus/KinVue_Server
-          ref: ${{ github.head_ref == 'codex/sprint-6-prove' && 'codex/sprint-6-prove' || 'dev' }}
+          ref: dev
           path: KinVue_Server
           persist-credentials: false
       - name: Install and build Auth
