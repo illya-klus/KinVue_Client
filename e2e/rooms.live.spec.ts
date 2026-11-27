@@ -340,27 +340,21 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       await ownerPage.getByRole("button", { name: "Add friend" }).click();
       await expect(ownerPage.getByText("Request sent")).toBeVisible();
 
+      await friendPage.goto("/profile");
+      await expect(
+        friendPage.getByRole("heading", { name: "Your profile" }),
+      ).toBeVisible();
       const friendRequestNotice = friendPage.getByText(
         `Friend request from ${owner.userId}`,
       );
+      const friendNotificationLoad = friendPage.waitForResponse(
+        (response) =>
+          response.url().endsWith("/api/notifications") &&
+          response.request().method() === "GET",
+      );
       await friendPage.getByRole("button", { name: "Notifications" }).click();
-      await expect
-        .poll(
-          async () => {
-            if (await friendRequestNotice.isVisible().catch(() => false)) {
-              return true;
-            }
-            await friendPage
-              .getByRole("button", { name: "Notifications" })
-              .click();
-            await friendPage
-              .getByRole("button", { name: "Notifications" })
-              .click();
-            return friendRequestNotice.isVisible().catch(() => false);
-          },
-          { timeout: 30_000, intervals: [1_000, 2_000] },
-        )
-        .toBe(true);
+      expect((await friendNotificationLoad).status()).toBe(200);
+      await expect(friendRequestNotice).toBeVisible();
 
       await friendPage.goto("/friends");
       await friendPage.getByRole("button", { name: "Incoming" }).click();
@@ -383,7 +377,13 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       await ownerPage.getByRole("button", { name: "Remove", exact: true }).click();
       await expect(ownerPage.getByText("Watchlist is empty")).toBeVisible();
 
+      const ownerNotificationLoad = ownerPage.waitForResponse(
+        (response) =>
+          response.url().endsWith("/api/notifications") &&
+          response.request().method() === "GET",
+      );
       await ownerPage.getByRole("button", { name: "Notifications" }).click();
+      expect((await ownerNotificationLoad).status()).toBe(200);
       await expect(
         ownerPage.getByText(`${friend.userId} accepted your request`),
       ).toBeVisible({ timeout: 30_000 });
