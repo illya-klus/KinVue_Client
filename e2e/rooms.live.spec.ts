@@ -46,6 +46,33 @@ async function openMovieFixture(page: Page) {
   await expect(page.getByRole("heading", { name: "Rooms live E2E fixture" })).toBeVisible();
 }
 
+async function waitForNotification(
+  page: Page,
+  token: string,
+  type: string,
+  relatedUserId: string,
+) {
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`${api}/notifications`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (!response.ok()) return false;
+        const data = (await response.json()) as {
+          items: Array<{ type: string; payload: Record<string, unknown> }>;
+        };
+        return data.items.some(
+          (item) =>
+            item.type === type &&
+            JSON.stringify(item.payload).includes(relatedUserId),
+        );
+      },
+      { timeout: 30_000, intervals: [500, 1_000, 2_000] },
+    )
+    .toBe(true);
+}
+
 async function registerAndSignIn(page: Page, label: string): Promise<Identity> {
   const id = randomUUID().replaceAll("-", "").slice(0, 16);
   const email = `kinvue-${label}-${id}@example.test`;
@@ -347,6 +374,12 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       const friendRequestNotice = friendPage.getByText(
         `Friend request from ${owner.userId}`,
       );
+      await waitForNotification(
+        friendPage,
+        friend.token,
+        "FRIEND_REQUEST_CREATED",
+        owner.userId,
+      );
       const friendNotificationLoad = friendPage.waitForResponse(
         (response) =>
           response.url().endsWith("/api/notifications") &&
@@ -377,6 +410,12 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       await ownerPage.getByRole("button", { name: "Remove", exact: true }).click();
       await expect(ownerPage.getByText("Watchlist is empty")).toBeVisible();
 
+      await waitForNotification(
+        ownerPage,
+        owner.token,
+        "FRIEND_REQUEST_ACCEPTED",
+        friend.userId,
+      );
       const ownerNotificationLoad = ownerPage.waitForResponse(
         (response) =>
           response.url().endsWith("/api/notifications") &&
