@@ -445,6 +445,14 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       ];
       expect(refreshCookieHeader).toContain("kinvue_refresh=");
       expect(
+        refreshCookieHeader
+          ?.split(";")
+          .some(
+            (cookie) =>
+              cookie.trim() === `kinvue_refresh=${loginCookie?.value}`,
+          ),
+      ).toBe(true);
+      expect(
         restoredSession.status(),
         `refresh response: ${await restoredSession.text()}`,
       ).toBe(201);
