@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type Page, type StorageState } from "@playwright/test";
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Page,
+} from "@playwright/test";
 
 const liveStack = process.env.E2E_STACK === "1";
 const movieId = "aeb60a91-940b-41c9-a011-5b88ea76b387";
@@ -18,8 +23,8 @@ let liveIdentities:
       owner: Identity;
       friend: Identity;
       outsider: Identity;
-      ownerStorageState: StorageState;
-      friendStorageState: StorageState;
+      ownerStorageState: Awaited<ReturnType<BrowserContext["storageState"]>>;
+      friendStorageState: Awaited<ReturnType<BrowserContext["storageState"]>>;
     }
   | undefined;
 
@@ -77,20 +82,6 @@ async function registerAndSignIn(page: Page, label: string): Promise<Identity> {
   };
 }
 
-async function signInExisting(page: Page, identity: Identity) {
-  await page.goto("/login");
-  const login = page.waitForResponse(
-    (response) =>
-      response.url().endsWith("/api/auth/login") &&
-      response.request().method() === "POST",
-  );
-  await page.getByLabel("Email").fill(identity.email);
-  await page.getByLabel("Password").fill(identity.password);
-  await page.getByRole("button", { name: "Sign in" }).click();
-  expect((await login).status()).toBe(201);
-  await expect(page).toHaveURL(/\/movies\/search$/);
-}
-
 test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/279/290)", () => {
   test.describe.configure({ mode: "serial", retries: 0 });
   test.skip(!liveStack, "Run with E2E_STACK=1 against the disposable live stack");
@@ -119,8 +110,6 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       soloPlaybackIdentity = { email: owner.email, password: owner.password };
       const friend = await registerAndSignIn(friendPage, "friend");
       const outsider = await registerAndSignIn(outsiderPage, "outsider");
-      liveIdentities = { owner, friend, outsider };
-
       await openMovieFixture(ownerPage);
       await expect(ownerPage.getByRole("heading", { name: "Watch room" })).toBeVisible({ timeout: 30_000 });
       await ownerPage.getByLabel("Private").check();
