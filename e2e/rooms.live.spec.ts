@@ -1,12 +1,32 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type BrowserContext,
+  type Page,
+} from "@playwright/test";
 
 const liveStack = process.env.E2E_STACK === "1";
 const movieId = "aeb60a91-940b-41c9-a011-5b88ea76b387";
 const api = "http://localhost:4000/api";
 
-type Identity = { email: string; password: string; userId: string; token: string };
+type Identity = {
+  email: string;
+  password: string;
+  userId: string;
+  username: string;
+  token: string;
+};
 let soloPlaybackIdentity: Pick<Identity, "email" | "password"> | undefined;
+let liveIdentities:
+  | {
+      owner: Identity;
+      friend: Identity;
+      outsider: Identity;
+      ownerStorageState: Awaited<ReturnType<BrowserContext["storageState"]>>;
+      friendStorageState: Awaited<ReturnType<BrowserContext["storageState"]>>;
+    }
+  | undefined;
 
 function tokenSubject(token: string) {
   const payload = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()) as {
@@ -24,6 +44,33 @@ async function openMovieFixture(page: Page) {
   await movieLink.click();
   await expect(page).toHaveURL(new RegExp(`/movies/${movieId}$`));
   await expect(page.getByRole("heading", { name: "Rooms live E2E fixture" })).toBeVisible();
+}
+
+async function waitForNotification(
+  page: Page,
+  token: string,
+  type: string,
+  relatedUserId: string,
+) {
+  await expect
+    .poll(
+      async () => {
+        const response = await page.request.get(`${api}/notifications`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        if (!response.ok()) return false;
+        const data = (await response.json()) as {
+          items: Array<{ type: string; payload: Record<string, unknown> }>;
+        };
+        return data.items.some(
+          (item) =>
+            item.type === type &&
+            JSON.stringify(item.payload).includes(relatedUserId),
+        );
+      },
+      { timeout: 30_000, intervals: [500, 1_000, 2_000] },
+    )
+    .toBe(true);
 }
 
 async function registerAndSignIn(page: Page, label: string): Promise<Identity> {
@@ -53,7 +100,13 @@ async function registerAndSignIn(page: Page, label: string): Promise<Identity> {
   expect(loginResponse.status()).toBe(201);
   const { accessToken } = (await loginResponse.json()) as { accessToken: string };
   await expect(page).toHaveURL(/\/movies\/search$/);
-  return { email, password, token: accessToken, userId: tokenSubject(accessToken) };
+  return {
+    email,
+    password,
+    token: accessToken,
+    userId: tokenSubject(accessToken),
+    username: `e2e_${id}`,
+  };
 }
 
 test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/279/290)", () => {
@@ -84,7 +137,6 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       soloPlaybackIdentity = { email: owner.email, password: owner.password };
       const friend = await registerAndSignIn(friendPage, "friend");
       const outsider = await registerAndSignIn(outsiderPage, "outsider");
-
       await openMovieFixture(ownerPage);
       await expect(ownerPage.getByRole("heading", { name: "Watch room" })).toBeVisible({ timeout: 30_000 });
       await ownerPage.getByLabel("Private").check();
@@ -187,6 +239,13 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       roomIds.splice(roomIds.indexOf(publicRoomId), 1);
       await expect(ownerPage).toHaveURL(/\/rooms$/);
       await expect(friendPage.getByText("This room is closed.")).toBeVisible({ timeout: 10_000 });
+      liveIdentities = {
+        owner,
+        friend,
+        outsider,
+        ownerStorageState: await ownerContext.storageState(),
+        friendStorageState: await friendContext.storageState(),
+      };
     } finally {
       if (owner) {
         for (const roomId of roomIds) {
@@ -242,8 +301,135 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       expect(signedUrl.searchParams.get("X-Amz-Expires")).toBe("600");
       expect(Date.parse(access.expiresAt)).toBeGreaterThan(Date.now());
       expect(roomSockets).toEqual([]);
+
+      const loginCookie = (await context.cookies()).find(
+        (cookie) => cookie.name === "kinvue_refresh",
+      );
+      expect(loginCookie?.httpOnly).toBe(true);
+      expect(loginCookie?.path).toBe("/api/auth");
+      const refreshResponse = page.waitForResponse(
+        (candidate) =>
+          candidate.url().endsWith("/api/auth/refresh") &&
+          candidate.request().method() === "POST",
+      );
+      await page.reload();
+      const restoredSession = await refreshResponse;
+      expect(restoredSession.status()).toBe(201);
+      await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
+      const restoredCookie = (await context.cookies()).find(
+        (cookie) => cookie.name === "kinvue_refresh",
+      );
+      expect(restoredCookie?.httpOnly).toBe(true);
+      await page.getByRole("button", { name: "Log out" }).click();
+      await expect(page.getByRole("link", { name: "Sign in", exact: true })).toBeVisible();
+      expect(
+        (await context.cookies()).some((cookie) => cookie.name === "kinvue_refresh"),
+      ).toBe(false);
     } finally {
       await context.close();
     }
   });
+
+  test(
+    "live profile, friend request, notification and watchlist journeys",
+    async ({ browser }) => {
+    test.setTimeout(180_000);
+      expect(
+        liveIdentities,
+        "the preceding room journey must create reusable live identities",
+      ).toBeDefined();
+    const ownerContext = await browser.newContext({
+      storageState: liveIdentities!.ownerStorageState,
+    });
+    const friendContext = await browser.newContext({
+      storageState: liveIdentities!.friendStorageState,
+    });
+    const ownerPage = await ownerContext.newPage();
+    const friendPage = await friendContext.newPage();
+
+    try {
+      const { owner, friend } = liveIdentities!;
+      await ownerPage.goto("/profile");
+      await expect(
+        ownerPage.getByRole("heading", { name: "Your profile" }),
+      ).toBeVisible();
+      await expect(ownerPage.getByText(`@${owner.username}`)).toBeVisible();
+      await ownerPage.getByLabel("Display name").fill("E2E owner acceptance profile");
+      await ownerPage.getByRole("button", { name: "Save changes" }).click();
+      await expect(ownerPage.getByText("Profile saved")).toBeVisible();
+
+      await ownerPage.goto("/users/search");
+      await ownerPage.getByPlaceholder("Username or display name").fill(friend.username);
+      await ownerPage.getByRole("button", { name: "Search", exact: true }).click();
+      await expect(ownerPage.getByText(`@${friend.username}`)).toBeVisible({
+        timeout: 30_000,
+      });
+      await ownerPage.getByRole("button", { name: "Add friend" }).click();
+      await expect(ownerPage.getByText("Request sent")).toBeVisible();
+
+      await friendPage.goto("/profile");
+      await expect(
+        friendPage.getByRole("heading", { name: "Your profile" }),
+      ).toBeVisible();
+      const friendRequestNotice = friendPage.getByText(
+        `Friend request from ${owner.userId}`,
+      );
+      await waitForNotification(
+        friendPage,
+        friend.token,
+        "FRIEND_REQUEST_CREATED",
+        owner.userId,
+      );
+      const friendNotificationLoad = friendPage.waitForResponse(
+        (response) =>
+          response.url().endsWith("/api/notifications") &&
+          response.request().method() === "GET",
+      );
+      await friendPage.getByRole("button", { name: "Notifications" }).click();
+      expect((await friendNotificationLoad).status()).toBe(200);
+      await expect(friendRequestNotice).toBeVisible();
+
+      await friendPage.goto("/friends");
+      await friendPage.getByRole("button", { name: "Incoming" }).click();
+      const incoming = friendPage.getByRole("listitem").filter({ hasText: friend.userId });
+      await expect(incoming).toContainText("PENDING");
+      await incoming.getByRole("button", { name: "Accept" }).click();
+      await friendPage.getByRole("button", { name: "Friends", exact: true }).click();
+      await expect(friendPage.getByText(`@${owner.username}`)).toBeVisible();
+
+      await ownerPage.getByRole("link", { name: "Movies" }).click();
+      await openMovieFixture(ownerPage);
+      await ownerPage.getByRole("button", { name: "Add to watchlist" }).click();
+      await expect(
+        ownerPage.getByRole("button", { name: "Remove from watchlist" }),
+      ).toBeVisible();
+      await ownerPage.goto("/watchlist");
+      await expect(
+        ownerPage.getByRole("link", { name: "Rooms live E2E fixture" }),
+      ).toBeVisible();
+      await ownerPage.getByRole("button", { name: "Remove", exact: true }).click();
+      await expect(ownerPage.getByText("Watchlist is empty")).toBeVisible();
+
+      await waitForNotification(
+        ownerPage,
+        owner.token,
+        "FRIEND_REQUEST_ACCEPTED",
+        friend.userId,
+      );
+      const ownerNotificationLoad = ownerPage.waitForResponse(
+        (response) =>
+          response.url().endsWith("/api/notifications") &&
+          response.request().method() === "GET",
+      );
+      await ownerPage.getByRole("button", { name: "Notifications" }).click();
+      expect((await ownerNotificationLoad).status()).toBe(200);
+      await expect(
+        ownerPage.getByText(`${friend.userId} accepted your request`),
+      ).toBeVisible({ timeout: 30_000 });
+    } finally {
+      await ownerContext.close();
+      await friendContext.close();
+    }
+    },
+  );
 });
