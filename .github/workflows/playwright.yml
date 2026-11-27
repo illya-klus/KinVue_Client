@@ -243,6 +243,18 @@ jobs:
             LOAD_REQUESTS=60 LOAD_CONCURRENCY=10 pnpm load:gateway
           BASE_URL=http://127.0.0.1:4000 SEARCH_Q=Rooms \
             LOAD_REQUESTS=40 pnpm load:search
+      - name: Capture Gateway request-ID log sample
+        working-directory: ${{ github.workspace }}/KinVue_Server
+        shell: bash
+        run: |
+          set -euo pipefail
+          logs="$(docker compose --env-file .env.example --profile apps logs \
+            --no-color --tail=500 gateway)"
+          samples="$(printf '%s\n' "$logs" | \
+            grep -E '"event":"http_request".*"requestId":"[^"]+"' | \
+            tail -n 5)"
+          test -n "$samples"
+          printf '%s\n' "$samples"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
