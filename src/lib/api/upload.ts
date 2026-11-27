@@ -9,11 +9,21 @@ export type UploadInitBody = {
 };
 
 export function initMultipartUpload(movieId: string, body: UploadInitBody) {
-  return gatewayFetch<UploadInitResponse>(`/api/admin/movies/${movieId}/upload/init`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  return gatewayFetch<UploadInitResponse>(
+    `/api/admin/movies/${movieId}/upload/init`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+export function refreshUploadParts(movieId: string, uploadId: string) {
+  return gatewayFetch<UploadInitResponse>(
+    `/api/admin/movies/${movieId}/upload/${uploadId}/parts`,
+    { method: "POST" },
+  );
 }
 
 export function completeMultipartUpload(
@@ -37,21 +47,36 @@ export async function uploadFileParts(
   file: File,
   parts: UploadInitResponse["parts"],
   onPartError?: (partNumber: number, error: unknown) => void,
+  completed: { partNumber: number; etag: string }[] = [],
 ): Promise<{ partNumber: number; etag: string }[]> {
-  const completed: { partNumber: number; etag: string }[] = [];
   for (const part of parts) {
+    if (completed.some((done) => done.partNumber === part.partNumber)) continue;
     const start = (part.partNumber - 1) * PART_SIZE;
     const end = Math.min(file.size, start + PART_SIZE);
     const chunk = file.slice(start, end);
     try {
-      let response = await fetch(part.url, { method: "PUT", body: chunk });
-      if (!response.ok) {
-        response = await fetch(part.url, { method: "PUT", body: chunk });
+      let response: Response | undefined;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          response = await fetch(part.url, { method: "PUT", body: chunk });
+          if (response.ok) break;
+          if (response.status === 403)
+            throw new Error(
+              "Upload URL expired. Retry to renew URLs for unfinished parts.",
+            );
+          throw new Error(
+            `Part ${part.partNumber} failed (${response.status})`,
+          );
+        } catch (error) {
+          if (attempt === 2 || response?.status === 403) throw error;
+          onPartError?.(part.partNumber, error);
+        }
       }
-      if (!response.ok) {
-        throw new Error(`Part ${part.partNumber} failed (${response.status})`);
-      }
-      const etag = response.headers.get("etag") ?? `"part-${part.partNumber}"`;
+      const etag = response?.headers.get("etag");
+      if (!etag)
+        throw new Error(
+          "Storage did not expose an ETag. Check storage CORS and retry this part.",
+        );
       completed.push({ partNumber: part.partNumber, etag });
     } catch (error) {
       onPartError?.(part.partNumber, error);

@@ -45,3 +45,7 @@ The client now follows the merged Auth cookie contract: access tokens stay in me
 The room page now authenticates directly with Rooms WebSocket, waits for room.state_sync, gates play/pause/seek by OWNER or CONTROLLER, ignores older versions, and reconnects with a fresh cookie-backed session. Chat uses message IDs and 1–1000 characters; the five reactions are like/laugh/wow/sad/fire. Heartbeat is 30 seconds, leave stops participation. Room media follows the server anchor with native controls disabled; solo playback sends no room events.
 
 Four Playwright realtime cases complement the existing room/member tests. The backend runbook doc/runbooks/rooms-sprint-4.md documents a real browser + two Rooms instances + Redis 7 smoke, including restart/resync. HTTP Auth/metadata are fixtures in that smoke; signed media delivery remains separate work.
+
+### Sprint 5 media
+
+Multipart parts go directly to private storage. Successful ETags stay in memory for this page; retry renews URLs for unfinished parts within the 24-hour upload session. No synthetic ETags are accepted. HLS requests media-access first and renews before expiry; leaving destroys the player and cancels renewal. Room roles and authoritative playback remain enforced. Run `pnpm exec playwright test e2e/media-sprint-5.spec.ts e2e/solo-playback.spec.ts e2e/rooms-realtime.spec.ts`. Storage must allow the web origin and expose ETag.
