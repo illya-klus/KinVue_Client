@@ -284,10 +284,11 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       ).toBe(true);
       const directRefresh = await context.request.post(
         "http://localhost:4000/api/auth/refresh",
+        {
+          headers: { cookie: `kinvue_refresh=${loginCookie!.value}` },
+        },
       );
-      expect(directRefresh.status(), "refresh through the browser cookie jar").toBe(
-        201,
-      );
+      expect(directRefresh.status(), "refresh with the login cookie").toBe(201);
       let refreshRequestHeaders: Promise<Record<string, string>> | undefined;
       page.on("request", (request) => {
         if (request.url().endsWith("/api/auth/refresh")) {
