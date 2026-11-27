@@ -440,7 +440,14 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       );
       await page.reload();
       const restoredSession = await refreshResponse;
-      expect(restoredSession.status()).toBe(201);
+      const refreshCookieHeader = (await restoredSession.request().allHeaders())[
+        "cookie"
+      ];
+      expect(refreshCookieHeader).toContain("kinvue_refresh=");
+      expect(
+        restoredSession.status(),
+        `refresh response: ${await restoredSession.text()}`,
+      ).toBe(201);
       await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
       const restoredCookie = (await context.cookies()).find(
         (cookie) => cookie.name === "kinvue_refresh",
