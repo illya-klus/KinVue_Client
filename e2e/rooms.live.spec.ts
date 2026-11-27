@@ -282,6 +282,12 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
         ),
         `refresh cookie scope: ${JSON.stringify({ domain: loginCookie?.domain, path: loginCookie?.path, sameSite: loginCookie?.sameSite })}`,
       ).toBe(true);
+      const directRefresh = await context.request.post(
+        "http://localhost:4000/api/auth/refresh",
+      );
+      expect(directRefresh.status(), "refresh through the browser cookie jar").toBe(
+        201,
+      );
       let refreshRequestHeaders: Promise<Record<string, string>> | undefined;
       page.on("request", (request) => {
         if (request.url().endsWith("/api/auth/refresh")) {
