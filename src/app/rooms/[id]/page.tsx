@@ -1,12 +1,13 @@
 "use client";
 import { FormEvent, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { HlsPlayer } from "@/components/media/hls-player";
 import { useRoomSocket } from "@/components/rooms/use-room-socket";
 import { RoomMembersPanel } from "@/components/rooms/room-members-panel";
 import { StatusMessage } from "@/components/ui/status-message";
+import { closeRoom } from "@/lib/api/rooms";
 const emojis = { like: "👍", laugh: "😂", wow: "😮", sad: "😢", fire: "🔥" };
 export default function RoomPage() {
   return (
@@ -17,15 +18,33 @@ export default function RoomPage() {
 }
 function RoomContent() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const { state, sendChat, sendPlayback, sendReaction, leave, reconnect } =
     useRoomSocket(id);
   const [text, setText] = useState("");
   const [seek, setSeek] = useState("");
+  const [closing, setClosing] = useState(false);
+  const [closeError, setCloseError] = useState<string | null>(null);
   const canControl =
     state.synced && ["OWNER", "CONTROLLER"].includes(state.role ?? "");
   function submit(event: FormEvent) {
     event.preventDefault();
     if (sendChat(text)) setText("");
+  }
+  async function closeOwnedRoom() {
+    if (!window.confirm("Close this room for all participants?")) return;
+    setClosing(true);
+    setCloseError(null);
+    try {
+      await closeRoom(id);
+      router.push("/rooms");
+    } catch (err) {
+      setCloseError(
+        err instanceof Error ? err.message : "Could not close the room",
+      );
+    } finally {
+      setClosing(false);
+    }
   }
   return (
     <section className="space-y-6">
@@ -48,6 +67,16 @@ function RoomContent() {
         >
           Leave room
         </button>
+        {state.synced && state.role === "OWNER" ? (
+          <button
+            type="button"
+            onClick={() => void closeOwnedRoom()}
+            disabled={closing}
+            className="rounded-lg border border-red-300 px-3 py-1 text-red-700 disabled:opacity-40"
+          >
+            {closing ? "Closing room…" : "Close room"}
+          </button>
+        ) : null}
         {state.left ? (
           <Link href="/rooms" className="text-blue-700">
             Back to rooms
@@ -66,6 +95,9 @@ function RoomContent() {
       ) : null}
       {state.error ? (
         <StatusMessage tone="error" title="Room" detail={state.error} />
+      ) : null}
+      {closeError ? (
+        <StatusMessage tone="error" title="Close room" detail={closeError} />
       ) : null}
       {state.synced ? (
         <p role="status">

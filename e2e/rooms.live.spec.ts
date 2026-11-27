@@ -174,6 +174,19 @@ test.describe("Live Rooms journeys through Gateway and Rooms (KIN-268/272/275/27
       for (const control of ["Play", "Pause", "Seek"]) {
         await expect(friendPage.getByRole("button", { name: control, exact: true })).toBeDisabled();
       }
+
+      await expect(friendPage.getByRole("button", { name: "Close room" })).toHaveCount(0);
+      const closeResponse = ownerPage.waitForResponse(
+        (response) =>
+          response.url().endsWith(`/api/rooms/${publicRoomId}`) &&
+          response.request().method() === "DELETE",
+      );
+      ownerPage.once("dialog", (dialog) => dialog.accept());
+      await ownerPage.getByRole("button", { name: "Close room" }).click();
+      expect((await closeResponse).status()).toBe(200);
+      roomIds.splice(roomIds.indexOf(publicRoomId), 1);
+      await expect(ownerPage).toHaveURL(/\/rooms$/);
+      await expect(friendPage.getByText("This room is closed.")).toBeVisible({ timeout: 10_000 });
     } finally {
       if (owner) {
         for (const roomId of roomIds) {
